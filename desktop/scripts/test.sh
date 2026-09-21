@@ -13,6 +13,7 @@ xcrun swiftc -swift-version 5 -module-cache-path "$PWD/desktop/build/module-cach
 ./desktop/build/picker-tests -pickerRequested YES -pickerAllApps YES
 
 python3 desktop/Tests/test_update_config.py
+python3 desktop/Tests/test_github_config.py
 bash desktop/scripts/fetch-sparkle.sh
 sparkle="$PWD/desktop/build/dependencies/Sparkle-2.10.0"
 xcrun swiftc -swift-version 5 -module-cache-path "$PWD/desktop/build/module-cache" \

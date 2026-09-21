@@ -82,15 +82,21 @@ struct TokenBadge: View {
         let kind = token.kind.lowercased()
         Group {
             if kind == "color", let color = TokenPreview.color(value) {
-                RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: color)).overlay(RoundedRectangle(cornerRadius: 4).stroke(.white.opacity(0.25),lineWidth: 1)).padding(3)
+                RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: color)).overlay(RoundedRectangle(cornerRadius: 6).stroke(.white.opacity(0.25),lineWidth: 1)).padding(8)
             } else if kind == "radius" || token.name.contains("radius"), let radius = TokenPreview.radius(value) {
-                RadiusCorner(radius: min(radius,16)).stroke(Protegia.text,style: StrokeStyle(lineWidth: 2,lineCap: .round)).padding(5)
-            } else if kind == "typography" || token.name.contains("font") || token.name.contains("text-size") {
+                RoundedRectangle(cornerRadius: min(radius,16)).fill(.white.opacity(0.12)).overlay(RoundedRectangle(cornerRadius: min(radius,16)).stroke(Protegia.text,lineWidth: 1)).padding(8)
+            } else if kind == "typography" || token.name.contains("font") || token.name.contains("text-size") || (token.name.hasPrefix("--text-") && TokenPreview.radius(value) != nil) {
                 let family = value.split(separator: ",").first.map(String.init)?.trimmingCharacters(in: CharacterSet(charactersIn: " '\"")) ?? ""
-                Text("Aa").font(token.name.contains("family") ? .custom(family,size: 14) : .system(size: 14,weight: token.name.contains("weight") && (Double(value) ?? 400) >= 600 ? .bold : .regular))
+                let size = token.name.hasPrefix("--text-") || token.name.contains("font-size") ? min(32,max(10,TokenPreview.radius(value) ?? 24)) : 24
+                Text("Aa").font(token.name.contains("family") ? .custom(family,size: size) : .system(size: size,weight: token.name.contains("weight") && (Double(value) ?? 400) >= 600 ? .bold : .regular))
+            } else if let dimension = TokenPreview.radius(value) {
+                VStack(spacing: 5) {
+                    Rectangle().fill(Protegia.text).frame(width: min(32,max(2,dimension)),height: 4)
+                    Text("↔").font(.system(size: 16)).foregroundStyle(Protegia.secondary)
+                }
             } else {
                 Text(kind == "color" ? "?" : kind == "class" ? "." : "#").font(.system(size: 13,weight: .medium)).foregroundStyle(Protegia.secondary)
             }
-        }.frame(width: 28,height: 28).background(Protegia.level1,in: RoundedRectangle(cornerRadius: 5)).help("\(token.name): \(value)")
+        }.frame(width: 48,height: 48).background(.white.opacity(0.12),in: RoundedRectangle(cornerRadius: 9)).clipShape(RoundedRectangle(cornerRadius: 9)).help("\(token.name): \(value)")
     }
 }

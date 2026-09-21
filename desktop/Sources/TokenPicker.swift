@@ -37,11 +37,11 @@ struct PickerView: View {
                         if state.matches.isEmpty { Text("No matching tokens").font(Protegia.font(12)).foregroundStyle(Protegia.secondary).padding(25) }
                         ForEach(Array(state.matches.enumerated()), id: \.element.id) { index, token in
                             Button { state.choose?(token) } label: {
-                                HStack(spacing: 9) {
+                                HStack(spacing: 12) {
                                     TokenBadge(token: token, tokens: state.tokens)
-                                    VStack(alignment: .leading, spacing: 4) { Text(token.name).font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(1); Text(token.source).font(Protegia.font(10)).foregroundStyle(Protegia.secondary).lineLimit(1) }
+                                    VStack(alignment: .leading, spacing: 4) { Text(token.name).font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(1); Text(token.value).font(Protegia.font(12)).foregroundStyle(Protegia.secondary).lineLimit(1).help(token.value) }
                                     Spacer(minLength: 6)
-                                    Text(index == state.selected ? "↵" : token.value).font(.system(size: 10, design: .monospaced)).foregroundStyle(Protegia.secondary).lineLimit(1).frame(maxWidth: 75)
+                                    Text("↵").font(.system(size: 16)).foregroundStyle(Protegia.secondary).opacity(index == state.selected ? 1 : 0)
                                 }.padding(9).frame(maxWidth: .infinity, alignment: .leading).background(index == state.selected ? Protegia.level1 : .clear, in: RoundedRectangle(cornerRadius: Protegia.controlRadius)).contentShape(Rectangle())
                             }.buttonStyle(.plain).id(index)
                         }

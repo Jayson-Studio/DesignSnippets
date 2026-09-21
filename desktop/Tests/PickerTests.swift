@@ -3,6 +3,20 @@ import SwiftUI
 
 @main struct PickerTests {
     @MainActor static func main() {
+        let testDefaults = UserDefaults(suiteName: "DesignSnippets.GitHubConfigurationTests")!
+        let arguments = testDefaults.volatileDomain(forName: UserDefaults.argumentDomain)
+        testDefaults.setVolatileDomain(arguments.merging(["githubClientID": "Iv1.stale", "githubAppSlug": "old-preview"]) { _, value in value }, forName: UserDefaults.argumentDomain)
+        let release = AppModel(preview: true, info: ["SemanticGitHubClientID": "Iv1.release", "SemanticGitHubAppSlug": "release-app", "SemanticDeveloperSetupAllowed": false], defaults: testDefaults)
+        precondition(release.clientID == "Iv1.release" && release.appSlug == "release-app" && !release.allowsDeveloperSetup)
+        let development = AppModel(preview: true, info: ["SemanticDeveloperSetupAllowed": true], defaults: testDefaults)
+        precondition(development.clientID == "Iv1.stale" && development.appSlug == "old-preview")
+        let brokenRelease = AppModel(preview: true, info: [:], defaults: testDefaults)
+        brokenRelease.connectGitHub()
+        precondition(brokenRelease.clientID.isEmpty && brokenRelease.screen != "setup" && brokenRelease.error != nil)
+        testDefaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+        let freshPreview = AppModel(preview: true, info: ["SemanticDeveloperSetupAllowed": true], defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        freshPreview.connectGitHub()
+        precondition(freshPreview.screen == "setup")
         // Command-line defaults supply enable intent without writing user preferences.
         let model = AppModel(preview: true)
         precondition(model.pickerRequested && model.allApps)

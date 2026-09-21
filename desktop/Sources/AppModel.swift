@@ -2,8 +2,9 @@ import AppKit
 import SwiftUI
 
 @MainActor final class AppModel: ObservableObject {
-    @Published var clientID = UserDefaults.standard.string(forKey: "githubClientID") ?? (Bundle.main.object(forInfoDictionaryKey: "SemanticGitHubClientID") as? String ?? "")
-    @Published var appSlug = UserDefaults.standard.string(forKey: "githubAppSlug") ?? (Bundle.main.object(forInfoDictionaryKey: "SemanticGitHubAppSlug") as? String ?? "")
+    @Published var clientID = ""
+    @Published var appSlug = ""
+    let allowsDeveloperSetup: Bool
     @Published var account: String? = nil
     @Published var selectedRepository: Repository? = nil
     @Published var tokenFilePaths = "src/styles/theme.css"
@@ -44,7 +45,10 @@ import SwiftUI
         ("Google Chrome", "com.google.Chrome"), ("Safari", "com.apple.Safari"),
         ("Arc", "company.thebrowser.Browser"), ("TextEdit (for testing)", "com.apple.TextEdit")
     ]
-    init(preview: Bool = false) {
+    init(preview: Bool = false, info: [String: Any] = Bundle.main.infoDictionary ?? [:], defaults: UserDefaults = .standard) {
+        allowsDeveloperSetup = info["SemanticDeveloperSetupAllowed"] as? Bool ?? false
+        clientID = (info["SemanticGitHubClientID"] as? String ?? (allowsDeveloperSetup ? defaults.string(forKey: "githubClientID") : nil) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        appSlug = (info["SemanticGitHubAppSlug"] as? String ?? (allowsDeveloperSetup ? defaults.string(forKey: "githubAppSlug") : nil) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         cacheURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Semantic/token-index.json")
         if preview { return }
         if let data = try? Data(contentsOf: cacheURL), let saved = try? JSONDecoder().decode([TokenIndex].self, from: data) { indices = saved }
@@ -54,6 +58,7 @@ import SwiftUI
     }
     func select(_ id: Int) { activeID = id; UserDefaults.standard.set(id, forKey: "activeRepository") }
     func saveConfiguration() {
+        guard allowsDeveloperSetup else { return }
         clientID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
         appSlug = appSlug.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clientID.isEmpty, clientID.range(of: #"^[a-zA-Z0-9_.-]+$"#, options: .regularExpression) != nil,
@@ -65,7 +70,7 @@ import SwiftUI
         error = nil; screen = "home"
     }
     func connectGitHub() {
-        guard !clientID.isEmpty, !appSlug.isEmpty else { screen = "setup"; return }
+        guard !clientID.isEmpty, !appSlug.isEmpty else { missingGitHubConfiguration(); return }
         task?.cancel(); busy = true; error = nil; status = "Starting GitHub sign-in…"
         task = Task {
             do {
@@ -165,7 +170,7 @@ import SwiftUI
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cacheURL.path)
     }
     func installGitHubApp() {
-        guard appSlug.range(of: #"^[a-zA-Z0-9-]+$"#, options: .regularExpression) != nil else { screen = "setup"; return }
+        guard appSlug.range(of: #"^[a-zA-Z0-9-]+$"#, options: .regularExpression) != nil else { missingGitHubConfiguration(); return }
         refreshAfterGitHub = true
         NSWorkspace.shared.open(URL(string: "https://github.com/apps/\(appSlug)/installations/new")!)
     }
@@ -174,6 +179,10 @@ import SwiftUI
         guard refreshAfterGitHub, !busy, token != nil else { return }
         refreshAfterGitHub = false
         refreshRepositories()
+    }
+    private func missingGitHubConfiguration() {
+        if allowsDeveloperSetup { screen = "setup" }
+        else { error = "This build is missing its GitHub configuration. Please install an updated release of DesignSnippets." }
     }
     func allowsPicker(in bundle: String) -> Bool { allApps || enabledApps.contains(bundle) }
     func reconcilePicker() {

@@ -7,6 +7,7 @@ if [[ "${DESIGNSNIPPETS_BUILD_SNAPSHOT:-0}" != "1" ]]; then
   exec /bin/bash -c "$(cat "$0")" "$0" "$@"
 fi
 cd "$(dirname "$0")/../.."
+python3 desktop/scripts/configure-github.py --check
 output="$PWD/desktop/build"
 mkdir -p "$output"
 staging=$(mktemp -d "$output/staging.XXXXXX")
@@ -54,12 +55,7 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>NSAccessibilityUsageDescription</key><string>DesignSnippets detects # and inserts your selected design token in compatible apps. It does not store or transmit typed text.</string>
 </dict></plist>
 PLIST
-if [[ -n "${SEMANTIC_GITHUB_CLIENT_ID:-}" ]]; then
-  /usr/libexec/PlistBuddy -c "Add :SemanticGitHubClientID string $SEMANTIC_GITHUB_CLIENT_ID" "$app/Contents/Info.plist"
-fi
-if [[ -n "${SEMANTIC_GITHUB_APP_SLUG:-}" ]]; then
-  /usr/libexec/PlistBuddy -c "Add :SemanticGitHubAppSlug string $SEMANTIC_GITHUB_APP_SLUG" "$app/Contents/Info.plist"
-fi
+python3 desktop/scripts/configure-github.py "$app/Contents/Info.plist"
 python3 desktop/scripts/configure-updates.py "$app/Contents/Info.plist"
 iconset="$output/DesignSnippets.iconset"
 mkdir -p "$iconset"

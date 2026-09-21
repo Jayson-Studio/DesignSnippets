@@ -2,6 +2,8 @@
 # Prepare artifacts only. Publishing is a separate, explicit operation.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+export SEMANTIC_REQUIRE_GITHUB=1
+python3 desktop/scripts/configure-github.py --check
 : "${SEMANTIC_SIGN_IDENTITY:?Set an installed Developer ID Application signing identity}"
 [[ "$SEMANTIC_SIGN_IDENTITY" == "Developer ID Application:"* ]] || { echo 'A Developer ID Application identity is required.' >&2; exit 1; }
 : "${SEMANTIC_NOTARY_PROFILE:?Set your notarytool Keychain profile name}"

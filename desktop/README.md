@@ -40,13 +40,15 @@ Create a **GitHub App**, not a traditional OAuth App, at [GitHub App registratio
 
 Then click **Connect GitHub** in DesignSnippets, enter the displayed code in the GitHub browser page, and approve the connection yourself. Choose a repository in DesignSnippets, enter its repository-relative token file path, and click **Load design tokens**. For Protegia, keep the prefilled `src/styles/theme.css`. Add one path per line for multi-file systems. If it is missing, use **Manage repository access on GitHub**, install the app on the repository, and refresh the project list.
 
-For a distributable build, the developer embeds the **public** configuration so end users never have to register an app:
+For distributable builds, the existing GitHub App's **public** Client ID and slug are saved in `desktop/github.json` (`clientID` and `appSlug`). These committed public identifiers are embedded automatically in subsequent builds. Environment variables can override them:
 
 ```sh
 SEMANTIC_GITHUB_CLIENT_ID=Iv1.your_public_id \
 SEMANTIC_GITHUB_APP_SLUG=your-app-slug \
 npm run desktop:build
 ```
+
+The release script rejects missing or malformed configuration before building or signing. Configured builds always use the embedded identifiers and hide developer setup, regardless of saved preview preferences. Only unconfigured development builds permit setup; those values are saved locally under the app's bundle identity and are not a substitute for release configuration.
 
 No client secret, private key, or personal access token is placed in the binary. Device flow authorizes a GitHub App user token with the intersection of the user's access and the installation's permissions. Tokens are held only in process memory and discarded when DesignSnippets quits. Every launch starts signed out; GitHub may reuse your existing browser login during authorization. DesignSnippets never reads or writes Keychain credentials. Expired or revoked sessions require reconnecting; this preview does not implement server-assisted token refresh.
 

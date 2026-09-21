@@ -12,14 +12,14 @@ struct SemanticPanel: View {
                 Text("DesignSnippets").font(Protegia.font(18, bold: true))
                 Spacer()
                 Text("DESKTOP PREVIEW").font(Protegia.font(10, bold: true)).tracking(1).foregroundStyle(Protegia.secondary)
-                Menu { Button("Check for Updates…") { model.checkForUpdates?() }.disabled(!model.canCheckForUpdates); Button("Preferences…") { model.screen = "preferences" }; Button("GitHub App setup…") { model.screen = "setup" }; ProtegiaDivider(); Button("Quit DesignSnippets") { NSApp.terminate(nil) } } label: { Image(systemName: "ellipsis.circle").font(Protegia.font(18)) }.menuStyle(.borderlessButton).frame(width: 23)
+                Menu { Button("Check for Updates…") { model.checkForUpdates?() }.disabled(!model.canCheckForUpdates); Button("Preferences…") { model.screen = "preferences" }; if model.allowsDeveloperSetup { Button("GitHub App setup…") { model.screen = "setup" } }; ProtegiaDivider(); Button("Quit DesignSnippets") { NSApp.terminate(nil) } } label: { Image(systemName: "ellipsis.circle").font(Protegia.font(18)) }.menuStyle(.borderlessButton).frame(width: 23)
             }.padding(Protegia.spaceLG)
             ProtegiaDivider()
             ScrollView {
                 VStack(alignment: .leading, spacing: Protegia.spaceBase) {
                     if model.screen != "home" { Button { model.screen = "home"; model.error = nil } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(.plain).foregroundStyle(Protegia.secondary).font(Protegia.font(12)) }
                     if let device = model.deviceCode { deviceView(device) }
-                    else if model.screen == "setup" { setup }
+                    else if model.screen == "setup" && model.allowsDeveloperSetup { setup }
                     else if model.screen == "preferences" { preferences }
                     else if model.screen == "projects" { projects }
                     else if model.screen == "files" { files }
@@ -65,7 +65,7 @@ struct SemanticPanel: View {
                 if filtered.isEmpty { Text("No matching definitions.").font(Protegia.font(12)).foregroundStyle(Protegia.secondary) }
                 LazyVStack(spacing: 0) { ForEach(filtered.prefix(60)) { token in
                     Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(token.name, forType: .string); model.status = "Copied \(token.name)" } label: {
-                        HStack(spacing: 9) { TokenBadge(token: token, tokens: model.tokens); VStack(alignment: .leading, spacing: 4) { Text(token.name).font(.system(size: 11, design: .monospaced)).lineLimit(1); Text(token.source).font(Protegia.font(10)).foregroundStyle(Protegia.secondary).lineLimit(1) }; Spacer(); Image(systemName: "doc.on.doc").font(Protegia.font(12)).foregroundStyle(Protegia.tertiary) }.padding(.vertical, 9).contentShape(Rectangle())
+                        HStack(spacing: 12) { TokenBadge(token: token, tokens: model.tokens); VStack(alignment: .leading, spacing: 4) { Text(token.name).font(.system(size: 11, design: .monospaced)).lineLimit(1); Text(token.value).font(Protegia.font(12)).foregroundStyle(Protegia.secondary).lineLimit(1).help(token.value) }; Spacer(); Image(systemName: "doc.on.doc").font(Protegia.font(12)).foregroundStyle(Protegia.tertiary) }.padding(.vertical, 9).contentShape(Rectangle())
                     }.buttonStyle(.plain).help("Copy \(token.name)")
                 } }
                 if filtered.count > 60 { Text("Showing 60 of \(filtered.count). Search to narrow the list.").font(Protegia.font(10)).foregroundStyle(Protegia.secondary) }
@@ -175,9 +175,8 @@ struct SemanticPanel: View {
             Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Preview")").font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
             Button("Check for Updates…") { model.checkForUpdates?() }.disabled(!model.canCheckForUpdates)
             if !model.updatesConfigured { Text("In-app updates are not available in this development build.").font(Protegia.font(10)).foregroundStyle(Protegia.secondary) }
-            Button("GitHub App configuration…") { model.screen = "setup" }.buttonStyle(.plain).foregroundStyle(Protegia.secondary)
+            if model.allowsDeveloperSetup { Button("GitHub App configuration…") { model.screen = "setup" }.buttonStyle(.plain).foregroundStyle(Protegia.secondary) }
             if model.account != nil { Button("Disconnect GitHub & clear cached tokens", role: .destructive) { model.disconnect() }.font(Protegia.font(10)) }
         }
     }
 }
-
