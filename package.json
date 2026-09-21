@@ -1,0 +1,31 @@
+{
+  "name": "designsnippets",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "desktop:build": "bash desktop/scripts/build.sh",
+    "desktop:open": "open desktop/build/DesignSnippets.app",
+    "desktop:test": "bash desktop/scripts/test.sh",
+    "desktop:package": "bash desktop/scripts/package.sh",
+    "desktop:release": "bash desktop/scripts/release.sh",
+    "desktop:update-key": "xcrun swift -module-cache-path desktop/build/module-cache desktop/scripts/setup-update-key.swift"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
+  }
+}

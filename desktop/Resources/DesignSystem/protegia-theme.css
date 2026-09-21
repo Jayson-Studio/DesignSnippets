@@ -1,0 +1,518 @@
+@custom-variant dark (&:is(.dark *));
+
+:root,
+.light {
+  --font-size: 16px;
+
+  /* ============================================================
+     PRIMITIVES — raw values, maps to Figma Variables > Primitives
+     ============================================================ */
+
+  /* Neutrals */
+  --color-neutral-white: rgba(255, 255, 255, 1);
+  --color-neutral-50:    rgba(250, 250, 250, 1);
+  --color-neutral-100:   rgba(244, 244, 245, 1);
+  --color-neutral-200:   rgba(228, 228, 231, 1);
+  --color-neutral-300:   rgba(212, 212, 216, 1);
+  --color-neutral-400:   rgba(161, 161, 169, 1);
+  --color-neutral-500:   rgba(113, 113, 121, 1);
+  --color-neutral-600:   rgba(82, 82, 90, 1);
+  --color-neutral-700:   rgba(63, 63, 69, 1);
+  --color-neutral-800:   rgba(39, 39, 42, 1);
+  --color-neutral-900:   rgba(24, 24, 27, 1);
+  --color-black:         rgba(0, 0, 0, 1);
+  --color-transparent:   rgba(0, 0, 0, 0);
+
+  /* Zinc (Tailwind palette) — the same family the neutral scale above is built from */
+  --color-zinc-50:  rgba(250, 250, 250, 1);
+  --color-zinc-100: rgba(244, 244, 245, 1);
+  --color-zinc-200: rgba(228, 228, 231, 1);
+  --color-zinc-300: rgba(212, 212, 216, 1);
+  --color-zinc-400: rgba(161, 161, 170, 1);
+  --color-zinc-500: rgba(113, 113, 122, 1);
+  --color-zinc-600: rgba(82, 82, 91, 1);
+  --color-zinc-700: rgba(63, 63, 70, 1);
+  --color-zinc-800: rgba(39, 39, 42, 1);
+  --color-zinc-900: rgba(24, 24, 27, 1);
+  --color-zinc-950: rgba(9, 9, 11, 1);
+
+  /* Emerald (Tailwind palette) */
+  --color-emerald-50:  oklch(97.9% 0.021 166.113);
+  --color-emerald-100: oklch(95% 0.052 163.051);
+  --color-emerald-200: oklch(90.5% 0.093 164.15);
+  --color-emerald-300: oklch(84.5% 0.143 164.978);
+  --color-emerald-400: oklch(76.5% 0.177 163.223);
+  --color-emerald-500: oklch(69.6% 0.17 162.48);
+  --color-emerald-600: oklch(59.6% 0.145 163.225);
+  --color-emerald-700: oklch(50.8% 0.118 165.612);
+  --color-emerald-800: oklch(43.2% 0.095 166.913);
+  --color-emerald-900: oklch(37.8% 0.077 168.94);
+  --color-emerald-950: oklch(26.2% 0.051 172.552);
+
+  /* Red (Tailwind palette) */
+  --color-red-50:  oklch(97.1% 0.013 17.38);
+  --color-red-100: oklch(93.6% 0.032 17.717);
+  --color-red-200: oklch(88.5% 0.062 18.334);
+  --color-red-300: oklch(80.8% 0.114 19.571);
+  --color-red-400: oklch(70.4% 0.191 22.216);
+  --color-red-500: oklch(63.7% 0.237 25.331);
+  --color-red-600: oklch(57.7% 0.245 27.325);
+  --color-red-700: oklch(50.5% 0.213 27.518);
+  --color-red-800: oklch(44.4% 0.177 26.899);
+  --color-red-900: oklch(39.6% 0.141 25.723);
+  --color-red-950: oklch(25.8% 0.092 26.042);
+
+  /* Violet (Tailwind palette) */
+  --color-violet-50:  oklch(96.9% 0.016 293.756);
+  --color-violet-100: oklch(94.3% 0.029 294.588);
+  --color-violet-200: oklch(89.4% 0.057 293.283);
+  --color-violet-300: oklch(81.1% 0.111 293.571);
+  --color-violet-400: oklch(70.2% 0.183 293.541);
+  --color-violet-500: oklch(60.6% 0.25 292.717);
+  --color-violet-600: oklch(54.1% 0.281 293.009);
+  --color-violet-700: oklch(49.1% 0.27 292.581);
+  --color-violet-800: oklch(43.2% 0.232 292.759);
+  --color-violet-900: oklch(38% 0.189 293.745);
+  --color-violet-950: oklch(28.3% 0.141 291.089);
+
+  /* Blue (Tailwind palette) */
+  --color-blue-50:  oklch(97% 0.014 254.604);
+  --color-blue-100: oklch(93.2% 0.032 255.585);
+  --color-blue-200: oklch(88.2% 0.059 254.128);
+  --color-blue-300: oklch(80.9% 0.105 251.813);
+  --color-blue-400: oklch(70.7% 0.165 254.624);
+  --color-blue-500: oklch(62.3% 0.214 259.815);
+  --color-blue-600: oklch(54.6% 0.245 262.881);
+  --color-blue-700: oklch(48.8% 0.243 264.376);
+  --color-blue-800: oklch(42.4% 0.199 265.638);
+  --color-blue-900: oklch(37.9% 0.146 265.522);
+  --color-blue-950: oklch(28.2% 0.091 267.935);
+
+  /* Amber (Tailwind palette) */
+  --color-amber-50:  oklch(98.7% 0.022 95.277);
+  --color-amber-100: oklch(96.2% 0.059 95.617);
+  --color-amber-200: oklch(92.4% 0.12 95.746);
+  --color-amber-300: oklch(87.9% 0.169 91.605);
+  --color-amber-400: oklch(82.8% 0.189 84.429);
+  --color-amber-500: oklch(76.9% 0.188 70.08);
+  --color-amber-600: oklch(66.6% 0.179 58.318);
+  --color-amber-700: oklch(55.5% 0.163 48.998);
+  --color-amber-800: oklch(47.3% 0.137 46.201);
+  --color-amber-900: oklch(41.4% 0.112 45.904);
+  --color-amber-950: oklch(27.9% 0.077 45.635);
+
+  /* Numbers */
+  --number-min:  0;
+  --number-xxs:  4;
+  --number-xs:   8;
+  --number-sm:   12;
+  --number-base: 16;
+  --number-lg:   24;
+  --number-xl:   32;
+  --number-2xl:  48;
+  --number-3xl:  56;
+  --number-4xl:  64;
+  --number-huge: 250;
+  --number-mega: 500;
+  --number-max:  999;
+
+  /* Primaries */
+  --color-primary-green:  rgba(0, 255, 119, 1);
+  --color-primary-blue:   rgba(59, 129, 246, 1);
+  --color-primary-purple: rgba(139, 92, 246, 1);
+  --color-primary-orange: rgba(243, 72, 34, 1);
+  --color-primary-red:    rgba(240, 28, 30, 1);
+
+  /* ============================================================
+     PRIMITIVES — Typography scale (Protegia.sys naming)
+     ============================================================ */
+
+  /* Marketing (M) — largest display text, weight 900 Black */
+  --text-m-xl:  96px;
+  --text-m-lg:  64px;
+  --text-m-md:  56px;
+  --text-m-sm:  40px;
+
+  /* Headings (H) — weight 700 Bold */
+  --text-h1-lg: 32px;
+  --text-h2-md: 28px;
+  --text-h3-sm: 24px;
+
+  /* Subheadings / Secondary (S) — weight 500 Medium */
+  --text-s-lg:   18px;
+  --text-s-base: 16px;
+  --text-s-sm:   14px;
+
+  /* Paragraph / Body (P) — weight 400 Regular */
+  --text-p-lg:   18px;
+  --text-p-base: 16px;
+  --text-p-sm:   14px;
+  --text-p-xs:   12px;
+  --text-p-2xs:  10px;
+
+  /* Handwritten — weight 400 Regular, Caveat font */
+  --text-handwritten: 16px;
+
+  /* Line height — 120% for all */
+  --line-height-120: 1.2;
+
+  /* Legacy aliases for backwards compatibility */
+  --text-h1:    var(--text-h1-lg);
+  --text-h2:    var(--text-h2-md);
+  --text-h3:    var(--text-h3-sm);
+  --text-h4:    var(--text-s-lg);
+  --text-base:  var(--text-p-base);
+  --text-label: var(--text-p-sm);
+
+  /* ============================================================
+     PRIMITIVES — Font Families
+     ============================================================ */
+
+  --font-family-body:        'Lato', sans-serif;
+  --font-family-display:     'Instrument Serif', serif;
+  --font-family-handwritten: 'Caveat', cursive;
+
+  /* Backwards-compatible aliases (used in components — do not remove) */
+  --font-instrument-serif: var(--font-family-display);
+  --font-lato:             var(--font-family-body);
+
+  /* Font weights */
+  --font-weight-light:   300;
+  --font-weight-regular: 400;
+  --font-weight-medium:  500;
+  --font-weight-bold:    700;
+  --font-weight-black:   900;
+
+  /* Handwritten weight */
+  --font-weight-handwritten: var(--font-weight-regular);
+
+  /* ============================================================
+     SEMANTIC — maps to Figma Variables > Semantic
+     ============================================================ */
+
+  /* Background — canonical set */
+  --color-bg-base:    var(--color-zinc-50);
+  --color-bg-level1:  var(--color-zinc-100);
+  --color-bg-level2:  var(--color-zinc-200);
+  --color-bg-inverse: var(--color-neutral-white);
+
+  /* Legacy background aliases — migrate usages to the canonical four above, then delete */
+  --color-background-default:         var(--color-bg-base);
+  --color-background-card:            var(--color-neutral-100);
+  --color-background-popover:         var(--color-bg-level2);
+  --color-background-secondary:       var(--color-transparent);
+  --color-background-input:           var(--color-bg-level1);
+  --color-background-input-surface:   var(--color-neutral-100);
+  --color-background-sidebar:         var(--color-bg-base);
+  --color-background-surface-base:    var(--color-bg-base);
+  --color-background-surface-l1:      var(--color-bg-level1);
+  --color-background-surface-l2:      var(--color-bg-level2);
+  --color-background-surface-l3:      var(--color-zinc-300);
+  --color-background-surface-inverse: var(--color-bg-inverse);
+
+  /* Text */
+  /* Text — canonical set */
+  --color-text-primary:   var(--color-zinc-900);
+  --color-text-secondary: var(--color-neutral-300);
+  --color-text-tertiary:  var(--color-neutral-500);
+  --color-text-accent:    var(--color-primary-green);
+  --color-text-inverse:   var(--color-black);
+
+  /* Legacy text aliases — migrate usages to the canonical four above, then delete */
+  --color-text-default:            var(--color-text-primary);
+  --color-text-card:               var(--color-black);
+  --color-text-popover:            var(--color-neutral-white);
+  --color-text-muted:              var(--color-text-secondary);
+  --color-text-on-primary:         var(--color-black);
+  --color-text-on-secondary:       var(--color-text-tertiary);
+  --color-text-on-accent:          var(--color-black);
+  --color-text-on-destructive:     var(--color-neutral-white);
+  --color-text-sidebar:            var(--color-neutral-white);
+  --color-text-on-sidebar-primary: var(--color-black);
+  --color-text-on-sidebar-accent:  var(--color-neutral-white);
+
+  /* Icon — canonical set (mirrors Text) */
+  --color-icon-primary:   var(--color-neutral-50);
+  --color-icon-secondary: var(--color-neutral-300);
+  --color-icon-disabled:  var(--color-neutral-500);
+  --color-icon-accent:    var(--color-primary-green);
+  --color-icon-inverse:   var(--color-black);
+
+  /* Border */
+  --color-border-default:      var(--color-neutral-800);
+
+  /* Interactive */
+  --color-interactive-primary:         var(--color-neutral-white);
+  --color-interactive-muted:           var(--color-neutral-400);
+  --color-interactive-accent:          var(--color-neutral-200);
+  --color-interactive-sidebar-primary: var(--color-neutral-white);
+  --color-interactive-sidebar-accent:  var(--color-neutral-400);
+
+  /* Feedback */
+  --color-error-default:   var(--color-red-500);
+  --color-warning-default: var(--color-amber-500);
+  --color-success-default: var(--color-emerald-500);
+  --color-feedback-destructive: var(--color-primary-red);
+
+  /* Chart */
+  --color-chart-1: var(--color-primary-blue);
+  --color-chart-2: var(--color-primary-purple);
+  --color-chart-3: var(--color-primary-green);
+  --color-chart-4: var(--color-neutral-400);
+  --color-chart-5: var(--color-neutral-600);
+
+  /* Elevation */
+  --elevation-sm: 0px 4px 4px 0px rgba(0, 0, 0, 0.25);
+
+  /* Radius — every step derives from this base; change it and the scale shifts with it */
+  --radius:        0.625rem; /* 10px base */
+  --radius-full:   99px;     /* pill — kept out of @theme so Tailwind's own `rounded-full` is untouched */
+  --radius-button: 999px;
+  --radius-card:   8px;
+
+  /* Border — composite strokes (width + style + color). Colours come from the
+     semantic border tokens below, so these follow light/dark automatically. */
+  --border-default: 1px solid var(--color-border-default);
+  --border-none:    none;
+  --border-focus:   1px solid var(--color-border-default);
+}
+
+.dark {
+  /* Background — canonical set */
+  --color-bg-base:    var(--color-neutral-900);
+  --color-bg-level1:  var(--color-neutral-800);
+  --color-bg-level2:  var(--color-neutral-700);
+  --color-bg-inverse: var(--color-neutral-white);
+
+  /* Legacy background aliases */
+  --color-background-default:   var(--color-bg-base);
+  --color-background-card:      var(--color-neutral-100);
+  --color-background-popover:   var(--color-bg-level2);
+  --color-background-secondary: var(--color-transparent);
+  --color-background-input:     var(--color-bg-level1);
+  --color-background-sidebar:   var(--color-bg-base);
+  --color-background-surface-l3: var(--color-neutral-600);
+
+  /* Text */
+  /* Text — canonical set */
+  --color-text-primary:   var(--color-neutral-50);
+  --color-text-secondary: var(--color-neutral-300);
+  --color-text-tertiary:  var(--color-neutral-500);
+  --color-text-accent:    var(--color-primary-green);
+  --color-text-inverse:   var(--color-black);
+
+  /* Legacy text aliases — migrate usages to the canonical four above, then delete */
+  --color-text-default:            var(--color-text-primary);
+  --color-text-card:               var(--color-black);
+  --color-text-popover:            var(--color-neutral-white);
+  --color-text-muted:              var(--color-text-secondary);
+  --color-text-on-primary:         var(--color-black);
+  --color-text-on-secondary:       var(--color-text-tertiary);
+  --color-text-on-accent:          var(--color-black);
+  --color-text-on-destructive:     var(--color-neutral-white);
+  --color-text-sidebar:            var(--color-neutral-white);
+  --color-text-on-sidebar-primary: var(--color-black);
+  --color-text-on-sidebar-accent:  var(--color-neutral-white);
+
+  /* Icon — canonical set (mirrors Text) */
+  --color-icon-primary:   var(--color-neutral-50);
+  --color-icon-secondary: var(--color-neutral-300);
+  --color-icon-disabled:  var(--color-neutral-500);
+  --color-icon-accent:    var(--color-primary-green);
+  --color-icon-inverse:   var(--color-black);
+
+  /* Border */
+  --color-border-default:      var(--color-neutral-800);
+
+  /* Interactive */
+  --color-interactive-primary:         var(--color-neutral-white);
+  --color-interactive-muted:           var(--color-neutral-400);
+  --color-interactive-accent:          var(--color-neutral-200);
+  --color-interactive-sidebar-primary: var(--color-neutral-white);
+  --color-interactive-sidebar-accent:  var(--color-neutral-400);
+
+  /* Feedback */
+  --color-error-default:   var(--color-red-500);
+  --color-warning-default: var(--color-amber-500);
+  --color-success-default: var(--color-emerald-500);
+  --color-feedback-destructive: var(--color-primary-red);
+
+  /* Chart */
+  --color-chart-1: var(--color-primary-blue);
+  --color-chart-2: var(--color-primary-purple);
+  --color-chart-3: var(--color-primary-green);
+  --color-chart-4: var(--color-neutral-400);
+  --color-chart-5: var(--color-neutral-600);
+}
+
+@theme inline {
+  /* Tailwind color mappings → new semantic tokens */
+  --color-background: var(--color-bg-base);
+  --color-foreground: var(--color-text-primary);
+  --color-card: var(--color-background-card);
+  --color-card-foreground: var(--color-text-card);
+  --color-popover: var(--color-bg-level2);
+  --color-popover-foreground: var(--color-text-popover);
+  --color-primary: var(--color-interactive-primary);
+  --color-primary-foreground: var(--color-text-on-primary);
+  --color-secondary: var(--color-background-secondary);
+  --color-secondary-foreground: var(--color-text-tertiary);
+  --color-muted: var(--color-interactive-muted);
+  --color-muted-foreground: var(--color-text-secondary);
+  --color-accent: var(--color-interactive-accent);
+  --color-accent-foreground: var(--color-text-on-accent);
+  --color-destructive: var(--color-feedback-destructive);
+  --color-destructive-foreground: var(--color-text-on-destructive);
+  --color-border: var(--color-border-default);
+  --color-input: var(--color-bg-level1);
+  --color-input-background: var(--color-background-input-surface);
+  --color-surface-base: var(--color-bg-base);
+  --color-surface-l1: var(--color-bg-level1);
+  --color-surface-l2: var(--color-bg-level2);
+  --color-surface-l3: var(--color-background-surface-l3);
+  --color-surface-inverse: var(--color-bg-inverse);
+  --color-ring: var(--color-border-default);
+  --color-chart-1: var(--color-chart-1);
+  --color-chart-2: var(--color-chart-2);
+  --color-chart-3: var(--color-chart-3);
+  --color-chart-4: var(--color-chart-4);
+  --color-chart-5: var(--color-chart-5);
+  --shadow-sm: var(--elevation-sm);
+  --color-sidebar: var(--color-bg-base);
+  --color-sidebar-foreground: var(--color-text-sidebar);
+  --color-sidebar-primary: var(--color-interactive-sidebar-primary);
+  --color-sidebar-primary-foreground: var(--color-text-on-sidebar-primary);
+  --color-sidebar-accent: var(--color-interactive-sidebar-accent);
+  --color-sidebar-accent-foreground: var(--color-text-on-sidebar-accent);
+  --color-sidebar-border: var(--color-border-default);
+  --color-sidebar-ring: var(--color-border-default);
+}
+
+/* Radius scale — `static` so every step is emitted even when no utility references it
+   (token pages and inline styles read them via var()). Each step derives from --radius. */
+@theme static {
+  --radius-sm:     calc(var(--radius) - 4px);  /* 6px  */
+  --radius-md:     calc(var(--radius) - 2px);  /* 8px  */
+  --radius-lg:     var(--radius);              /* 10px */
+  --radius-xl:     calc(var(--radius) + 4px);  /* 14px */
+  --radius-2xl:    calc(var(--radius) + 8px);  /* 18px */
+  --radius-3xl:    calc(var(--radius) + 12px); /* 22px */
+  --radius-4xl:    initial;                    /* not in the Protegia scale — also drops Tailwind's default rounded-4xl */
+  --radius-button: 999px;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/**
+ * Base typography. Weight progression: P=400 · S=500 · H=700 · M=900
+ * This is not applied to elements which have an ancestor with a Tailwind text class.
+ */
+@layer base {
+  :where(:not(:has([class*=" text-"]), :not(:has([class^="text-"])))) {
+    h1 {
+      font-family: var(--font-family-body);
+      font-size: var(--text-h1);
+      font-weight: var(--font-weight-bold);
+      line-height: 1.2;
+    }
+
+    h2 {
+      font-family: var(--font-family-body);
+      font-size: var(--text-h2);
+      font-weight: var(--font-weight-bold);
+      line-height: 1.5;
+    }
+
+    h3 {
+      font-family: var(--font-family-body);
+      font-size: var(--text-h3);
+      font-weight: var(--font-weight-bold);
+      line-height: 1.5;
+    }
+
+    h4 {
+      font-family: var(--font-family-body);
+      font-size: var(--text-h4);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.3;
+    }
+
+    p {
+      font-family: var(--font-family-body);
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-regular);
+      line-height: 1.5;
+    }
+
+    label {
+      font-family: var(--font-family-body);
+      font-size: var(--text-label);
+      font-weight: var(--font-weight-regular);
+      line-height: 1.45;
+    }
+
+    button {
+      font-family: var(--font-family-body);
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-bold);
+      line-height: 1.5;
+    }
+
+    input {
+      font-family: var(--font-family-body);
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-regular);
+      line-height: 1.5;
+    }
+  }
+}
+
+/* Handwritten style — uses Caveat (Figma Hand substitute) */
+.handwritten {
+  font-family: var(--font-family-handwritten);
+  font-size: var(--text-handwritten);
+  font-weight: var(--font-weight-handwritten);
+  line-height: var(--line-height-120);
+}
+
+html {
+  font-size: var(--font-size);
+  /* Disable the browser's swipe-to-navigate (back/forward) and pull-to-refresh
+     gestures. Full-viewport pages like /map can't scroll, so any trackpad
+     overscroll would otherwise be read as a history swipe. */
+  overscroll-behavior: none;
+  /* Reserve the vertical scrollbar's width on every page so content doesn't
+     shift horizontally when navigating between short and tall pages. */
+  scrollbar-gutter: stable;
+}
+
+/* Shimmer loading animation for gallery cards */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Horizontal marquee — right-to-left infinite scroll.
+   Track must contain the content duplicated twice so -50% loops seamlessly. */
+@keyframes marquee-rtl {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* Search bar placeholder uses design system muted color */
+.search-bar-input::placeholder {
+  color: var(--color-interactive-muted);
+  opacity: 1;
+}

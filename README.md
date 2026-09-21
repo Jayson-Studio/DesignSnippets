@@ -1,17 +1,40 @@
 # DesignSnippets
 
-A macOS menu bar app that brings your design-system names into coding-agent prompts. Connect GitHub, choose token files, and type `#` in compatible text fields to find and insert semantic names.
+A local-first workspace for referencing design-system tokens in coding-agent prompts. Built with React, TypeScript, and Vite.
 
-## Download
+## Native menu bar app
 
-[Download the latest release](https://github.com/Jayson-Studio/DesignSnippets/releases/latest).
+The new macOS implementation is in `desktop/`. It connects a GitHub App, indexes selected repositories, and provides an opt-in system-wide `#` picker. See [desktop setup and testing](desktop/README.md).
 
-Requires macOS 14 or later. Supports Apple silicon and Intel Macs.
+```sh
+npm run desktop:build
+npm run desktop:open
+```
 
-Unzip the download, quit any previous Semantic or DesignSnippets app, and move DesignSnippets to Applications. Enable Accessibility permission for the system-wide picker. Some custom editors may not expose compatible text fields.
+## Web prototype
 
-## Updates
+### Run
 
-Version 0.3.0 introduces in-app updates. Install it manually once, then use **Check for Updates…** for future published releases.
+```sh
+npm install
+npm run dev
+```
 
-This repository hosts release downloads and the signed update feed.
+## How it works
+
+- Explore the clearly labeled example codebase, or connect a local project folder.
+- Import CSS custom properties and CSS classes from CSS, SCSS, Sass, and Less files. Generated folders and files larger than 2 MB are skipped.
+- Search and filter the token library. Type `#` in the composer to search tokens from the selected codebase; use arrow keys and Enter/Tab, or click, to insert one. Escape closes suggestions.
+- Prepare and copy a prompt containing exact token values, source paths, and CSS variable references.
+- Imports persist in browser localStorage. Re-import to refresh; disconnect through Settings.
+
+## Scope
+
+This version reads local stylesheets in the browser and prepares prompts; it does not authenticate to GitHub, watch files, invoke an AI model, or modify connected codebases. Token extraction is a lightweight text parser, not a full CSS/SCSS compiler. It records declarations, not computed theme values, and does not parse JavaScript theme configurations or JSON token files. With duplicate token names, the last declaration wins.
+
+## Checks
+
+```sh
+npm run build
+npm run lint
+```
