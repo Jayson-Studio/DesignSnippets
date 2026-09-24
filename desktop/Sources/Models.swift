@@ -6,6 +6,7 @@ struct DesignToken: Codable, Identifiable, Equatable {
     let value: String
     let kind: String
     let source: String
+    var typography: [String: String]? = nil
 }
 struct Repository: Codable, Identifiable, Equatable {
     let id: Int
@@ -55,7 +56,26 @@ enum TokenParser {
                 result.append(DesignToken(name: "." + name[1], value: "CSS class", kind: "Class", source: source))
             }
         }
-        return unique(result)
+        // Associate a size token with typography declared where that token is
+        // used. Keep only properties that agree across usages; never guess a
+        // single weight/family when the same size is used by different styles.
+        var styles: [String: [[String: String]]] = [:]
+        let keys = ["font-family": "fontFamily", "font-size": "fontSize", "font-weight": "fontWeight", "letter-spacing": "letterSpacing", "line-height": "lineHeight"]
+        for block in matches(#"([^{}]+)\{([^{}]*)\}"#, text) {
+            var properties: [String: String] = [:]
+            for declaration in matches(#"(?:^|;)\s*(font-family|font-size|font-weight|letter-spacing|line-height)\s*:\s*([^;{}]+)"#, block[2]) {
+                properties[keys[declaration[1]]!] = declaration[2].trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            guard let size = properties["fontSize"], let name = matches(#"^var\((--[\w-]+)\)$"#, size).first?[1] else { continue }
+            styles[name, default: []].append(properties)
+        }
+        return unique(result).map { token in
+            var token = token
+            if let usages = styles[token.name], let first = usages.first {
+                token.typography = first.filter { key, value in usages.allSatisfy { $0[key] == value } }
+            }
+            return token
+        }
     }
     static func parseJSON(_ text: String, source: String) -> [DesignToken] {
         guard let data = text.data(using: .utf8), let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }

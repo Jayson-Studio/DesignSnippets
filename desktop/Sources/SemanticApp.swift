@@ -23,7 +23,7 @@ import SwiftUI
             button.toolTip = "DesignSnippets — your design system, wherever you type"
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-        popover = NSPopover(); popover.behavior = .transient
+        popover = NSPopover(); popover.behavior = .transient; popover.animates = false
         popover.contentSize = NSSize(width: 420, height: 620)
         popover.contentViewController = NSHostingController(rootView: SemanticPanel(model: model))
         updater = AppUpdater(model: model) { [weak self] in self?.popover.performClose(nil) }
@@ -74,9 +74,11 @@ import SwiftUI
     @objc private func showPanel() {
         guard let button = statusItem.button else { return }
         picker.dismiss()
+        // The status-item button belongs to the menu bar on the display where its
+        // icon is visible. Keeping the popover attached to that button is more
+        // reliable than activating the accessory app, which can move focus to a
+        // different display and make AppKit reposition the popover.
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
-        NSApp.activate(ignoringOtherApps: true)
     }
     @objc private func checkForUpdates() { model.checkForUpdates?() }
     @objc private func quit() { NSApp.terminate(nil) }

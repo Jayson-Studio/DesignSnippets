@@ -2,6 +2,19 @@ import AppKit
 import SwiftUI
 
 enum TokenPreview {
+    static func fontWeight(_ value: String) -> Font.Weight {
+        switch value.lowercased().replacingOccurrences(of: "-", with: "").replacingOccurrences(of: " ", with: "") {
+        case "100", "thin": return .ultraLight
+        case "200", "extralight": return .thin
+        case "300", "light": return .light
+        case "500", "medium": return .medium
+        case "600", "semibold", "demibold": return .semibold
+        case "700", "bold": return .bold
+        case "800", "extrabold": return .heavy
+        case "900", "black": return .black
+        default: return .regular
+        }
+    }
     static func resolved(_ token: DesignToken, tokens: [DesignToken]) -> String {
         var value = token.value
         var visited = Set<String>()
@@ -14,6 +27,45 @@ enum TokenPreview {
             value = value.replacingOccurrences(of: match[0], with: replacement)
         }
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    static func typography(_ value: String) -> [String: Any]? {
+        guard let data = value.data(using: .utf8) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+    static func typography(_ token: DesignToken, tokens: [DesignToken]) -> [String: Any]? {
+        guard let properties = token.typography.map({ $0 as [String: Any] }) ?? typography(token.value) else { return typography(resolved(token, tokens: tokens)) }
+        return properties.mapValues { value in
+            guard let string = property(value) else { return value }
+            return resolved(DesignToken(name: token.name, value: string, kind: token.kind, source: token.source), tokens: tokens)
+        }
+    }
+    static func weightName(_ value: String) -> String {
+        ["100":"Thin", "200":"Extra light", "300":"Light", "400":"Regular", "500":"Medium", "600":"Semibold", "700":"Bold", "800":"Extra bold", "900":"Black"][value] ?? value.capitalized
+    }
+    static func property(_ value: Any?) -> String? {
+        guard let value else { return nil }
+        if let families = value as? [String] { return families.joined(separator: ", ") }
+        if let dimension = value as? [String: Any], let number = dimension["value"], let unit = dimension["unit"] as? String { return "\(number)\(unit)" }
+        return String(describing: value)
+    }
+    static func definition(_ token: DesignToken, tokens: [DesignToken]) -> String {
+        let value = resolved(token, tokens: tokens)
+        if let properties = typography(token, tokens: tokens) {
+            let parts = [property(properties["fontSize"]), property(properties["fontWeight"]).map(weightName), property(properties["letterSpacing"]).map { "Spacing \($0)" }, property(properties["lineHeight"]).map { "Line height \($0)" }, property(properties["fontFamily"])].compactMap { $0 }
+            if !parts.isEmpty { return parts.joined(separator: " · ") }
+        }
+        if token.name.contains("weight") { return weightName(value) }
+        if let match = TokenParser.matches(#"^var\((--[\w-]+)\)$|^\{([\w.-]+)\}$"#, token.value).first {
+            let alias = (match[1].isEmpty ? match[2] : String(match[1].dropFirst(2))).replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: ".", with: " ").capitalized
+            return value == token.value ? token.value : "\(alias) · \(value)"
+        }
+        return value
+    }
+    static func pickerDefinition(_ token: DesignToken, tokens: [DesignToken]) -> String {
+        let text = definition(token, tokens: tokens)
+            .replacingOccurrences(of: #"(?i)\brgba?\([^()]*\)"#, with: "", options: .regularExpression)
+        let parts = text.components(separatedBy: "·").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        return parts.isEmpty ? "Color" : parts.joined(separator: " · ")
     }
     static func color(_ raw: String) -> NSColor? {
         let value = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -77,26 +129,39 @@ struct RadiusCorner: Shape {
 struct TokenBadge: View {
     let token: DesignToken
     var tokens: [DesignToken] = []
+    var size: CGFloat = 48
     var body: some View {
         let value = TokenPreview.resolved(token, tokens: tokens)
         let kind = token.kind.lowercased()
-        Group {
+        let properties = TokenPreview.typography(token, tokens: tokens)
+        let radius = TokenPreview.radius(value)
+        let isText = kind == "typography" || token.name.contains("font") || (token.name.contains("text") && kind != "color")
+        ZStack(alignment: .topLeading) {
+            Color.white.opacity(0.19)
             if kind == "color", let color = TokenPreview.color(value) {
-                RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: color)).overlay(RoundedRectangle(cornerRadius: 6).stroke(.white.opacity(0.25),lineWidth: 1)).padding(8)
-            } else if kind == "radius" || token.name.contains("radius"), let radius = TokenPreview.radius(value) {
-                RoundedRectangle(cornerRadius: min(radius,16)).fill(.white.opacity(0.12)).overlay(RoundedRectangle(cornerRadius: min(radius,16)).stroke(Protegia.text,lineWidth: 1)).padding(8)
-            } else if kind == "typography" || token.name.contains("font") || token.name.contains("text-size") || (token.name.hasPrefix("--text-") && TokenPreview.radius(value) != nil) {
-                let family = value.split(separator: ",").first.map(String.init)?.trimmingCharacters(in: CharacterSet(charactersIn: " '\"")) ?? ""
-                let size = token.name.hasPrefix("--text-") || token.name.contains("font-size") ? min(32,max(10,TokenPreview.radius(value) ?? 24)) : 24
-                Text("Aa").font(token.name.contains("family") ? .custom(family,size: size) : .system(size: size,weight: token.name.contains("weight") && (Double(value) ?? 400) >= 600 ? .bold : .regular))
-            } else if let dimension = TokenPreview.radius(value) {
-                VStack(spacing: 5) {
-                    Rectangle().fill(Protegia.text).frame(width: min(32,max(2,dimension)),height: 4)
-                    Text("↔").font(.system(size: 16)).foregroundStyle(Protegia.secondary)
-                }
+                RoundedRectangle(cornerRadius: size * 0.13).fill(Color(nsColor: color))
+                    .overlay(RoundedRectangle(cornerRadius: size * 0.13).stroke(.white.opacity(0.15),lineWidth: 0.5)).padding(size * 0.16)
+            } else if (kind == "radius" || token.name.contains("radius")), let radius {
+                UnevenRoundedRectangle(topLeadingRadius: min(radius,size * 0.3)).fill(.white.opacity(0.8))
+                    .frame(width: size * 0.66, height: size * 0.66).offset(x: size * 0.4,y: size * 0.4)
+                RadiusCorner(radius: min(radius,size * 0.3)).stroke(Color.red,style: StrokeStyle(lineWidth: 1.3,lineCap: .round))
+                    .frame(width: size * 0.28,height: size * 0.28).offset(x: size * 0.4 - 2,y: size * 0.4 - 2)
+                Text("\(radius.formatted(.number.precision(.fractionLength(0...1))))px").font(.system(size: size * 0.16,weight: .semibold)).foregroundStyle(.red).padding(size * 0.14)
+            } else if isText {
+                let family = TokenPreview.property(properties?["fontFamily"]) ?? (token.name.contains("family") ? value : "")
+                let cleanFamily = family.split(separator: ",").first.map(String.init)?.trimmingCharacters(in: CharacterSet(charactersIn: " '\"")) ?? ""
+                let weight = TokenPreview.property(properties?["fontWeight"]) ?? (token.name.contains("weight") ? value : "400")
+                let fontSizeValue = TokenPreview.property(properties?["fontSize"]) ?? (token.name.contains("size") || token.name.hasPrefix("--text-") ? value : "16px")
+                let fontSize = max(1, TokenPreview.radius(fontSizeValue) ?? Double(fontSizeValue) ?? 16)
+                let fontWeight = TokenPreview.fontWeight(weight)
+                Text("Heading").font(cleanFamily.isEmpty ? .system(size: fontSize, weight: fontWeight) : .custom(cleanFamily, size: fontSize).weight(fontWeight))
+                    .fixedSize(horizontal: true, vertical: true).foregroundStyle(.white)
+                    .frame(width: size - 12, height: size - 12, alignment: .topLeading)
+                    .clipped().padding(6)
             } else {
-                Text(kind == "color" ? "?" : kind == "class" ? "." : "#").font(.system(size: 13,weight: .medium)).foregroundStyle(Protegia.secondary)
+                RoundedRectangle(cornerRadius: 5).fill(.white.opacity(0.14)).overlay(RoundedRectangle(cornerRadius: 5).stroke(.white.opacity(0.85),lineWidth: 1)).padding(size * 0.18)
             }
-        }.frame(width: 48,height: 48).background(.white.opacity(0.12),in: RoundedRectangle(cornerRadius: 9)).clipShape(RoundedRectangle(cornerRadius: 9)).help("\(token.name): \(value)")
+        }.frame(width: size,height: size).clipShape(RoundedRectangle(cornerRadius: size * 0.19))
+            .help("\(token.name): \(TokenPreview.definition(token,tokens: tokens)) · \(token.source)")
     }
 }

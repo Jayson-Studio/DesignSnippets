@@ -4,6 +4,7 @@ import AppKit
 let semanticGreen = Protegia.accent
 struct SemanticPanel: View {
     @ObservedObject var model: AppModel
+    var appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development"
     @State private var search = ""
     var body: some View {
         VStack(spacing: 0) {
@@ -11,8 +12,20 @@ struct SemanticPanel: View {
                 Image(systemName: "number.square.fill").font(Protegia.font(26)).foregroundStyle(semanticGreen)
                 Text("DesignSnippets").font(Protegia.font(18, bold: true))
                 Spacer()
-                Text("DESKTOP PREVIEW").font(Protegia.font(10, bold: true)).tracking(1).foregroundStyle(Protegia.secondary)
-                Menu { Button("Check for Updates…") { model.checkForUpdates?() }.disabled(!model.canCheckForUpdates); Button("Preferences…") { model.screen = "preferences" }; if model.allowsDeveloperSetup { Button("GitHub App setup…") { model.screen = "setup" } }; ProtegiaDivider(); Button("Quit DesignSnippets") { NSApp.terminate(nil) } } label: { Image(systemName: "ellipsis.circle").font(Protegia.font(18)) }.menuStyle(.borderlessButton).frame(width: 23)
+                Text(appVersion).font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
+                    .lineLimit(1).fixedSize().accessibilityLabel("Version \(appVersion)")
+                Menu {
+                    Button("Check for Updates…") { model.checkForUpdates?() }.disabled(!model.canCheckForUpdates)
+                    Button("Preferences…") { model.screen = "preferences" }
+                    if model.allowsDeveloperSetup { Button("GitHub App setup…") { model.screen = "setup" } }
+                    Divider()
+                    Button("Quit DesignSnippets") { NSApp.terminate(nil) }
+                } label: {
+                    Text("⋮")
+                        .font(.system(size: 20, weight: .semibold)).foregroundStyle(Protegia.secondary)
+                        .frame(width: 24, height: 28).contentShape(Rectangle())
+                }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().tint(Protegia.secondary)
+                    .accessibilityLabel("App menu").help("App menu")
             }.padding(Protegia.spaceLG)
             ProtegiaDivider()
             ScrollView {
@@ -65,7 +78,7 @@ struct SemanticPanel: View {
                 if filtered.isEmpty { Text("No matching definitions.").font(Protegia.font(12)).foregroundStyle(Protegia.secondary) }
                 LazyVStack(spacing: 0) { ForEach(filtered.prefix(60)) { token in
                     Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(token.name, forType: .string); model.status = "Copied \(token.name)" } label: {
-                        HStack(spacing: 12) { TokenBadge(token: token, tokens: model.tokens); VStack(alignment: .leading, spacing: 4) { Text(token.name).font(.system(size: 11, design: .monospaced)).lineLimit(1); Text(token.value).font(Protegia.font(12)).foregroundStyle(Protegia.secondary).lineLimit(1).help(token.value) }; Spacer(); Image(systemName: "doc.on.doc").font(Protegia.font(12)).foregroundStyle(Protegia.tertiary) }.padding(.vertical, 9).contentShape(Rectangle())
+                        HStack(spacing: 9) { TokenBadge(token: token, tokens: model.tokens); VStack(alignment: .leading, spacing: 4) { Text(token.name).font(.system(size: 11, design: .monospaced)).lineLimit(1); Text(TokenPreview.definition(token, tokens: model.tokens)).font(Protegia.font(10)).foregroundStyle(Protegia.secondary).lineLimit(1) }; Spacer(); Image(systemName: "doc.on.doc").font(Protegia.font(12)).foregroundStyle(Protegia.tertiary) }.padding(.vertical, 9).contentShape(Rectangle())
                     }.buttonStyle(.plain).help("Copy \(token.name)")
                 } }
                 if filtered.count > 60 { Text("Showing 60 of \(filtered.count). Search to narrow the list.").font(Protegia.font(10)).foregroundStyle(Protegia.secondary) }
@@ -172,7 +185,7 @@ struct SemanticPanel: View {
             Text("⌃⌥Space also opens the picker in a supported text field. Escape dismisses it without changing your text.").font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
             ProtegiaDivider()
             Text("Updates").font(Protegia.font(12, bold: true))
-            Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Preview")").font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
+            Text("Version \(appVersion)").font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
             Button("Check for Updates…") { model.checkForUpdates?() }.disabled(!model.canCheckForUpdates)
             if !model.updatesConfigured { Text("In-app updates are not available in this development build.").font(Protegia.font(10)).foregroundStyle(Protegia.secondary) }
             if model.allowsDeveloperSetup { Button("GitHub App configuration…") { model.screen = "setup" }.buttonStyle(.plain).foregroundStyle(Protegia.secondary) }
