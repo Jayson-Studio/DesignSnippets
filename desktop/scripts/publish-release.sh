@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 : "${SEMANTIC_VERSION:?}" "${SEMANTIC_BUILD_NUMBER:?}" "${GH_REPO:?}"
 release_commit="${SEMANTIC_RELEASE_COMMIT:-$(git rev-parse HEAD)}"
-git cat-file -e "$release_commit^{commit}"
+release_commit=$(git rev-parse --verify "$release_commit^{commit}")
 release="$PWD/desktop/build/releases/$SEMANTIC_VERSION"
 archive="$release/DesignSnippets-$SEMANTIC_VERSION-macOS.zip"
 feed="$release/appcast.xml"
