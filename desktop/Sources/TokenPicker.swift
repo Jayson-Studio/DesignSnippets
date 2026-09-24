@@ -431,12 +431,8 @@ final class FloatingPanel: NSPanel {
         ownerBundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? ""
         secureFocusDetected = false
         state.manualOnly = PickerEditor.usesManualPosition(bundle: ownerBundle)
-        // Use a click only when it was the action that focused this input. A stale
-        // click can belong to a different part of the editor and shift the picker.
-        let recentClick = lastClick.flatMap { click in
-            click.pid == pid && Date().timeIntervalSince(click.date) < 2 ? click.point : nil
-        }
-        fallbackPoint = state.manualOnly ? NSEvent.mouseLocation : (recentClick ?? NSEvent.mouseLocation)
+        // Preserve the last click in this app even when the pointer moves while typing.
+        fallbackPoint = lastClick?.pid == pid ? lastClick!.point : NSEvent.mouseLocation
         state.tokens = model.tokens; state.project = model.activeIndex?.repository.full_name ?? ""; state.selected = 0
         // AX requests from inside the event-tap callback can block delivery to the editor.
         // Resolve focus after delivery, with retries for lazily-created accessibility trees.
@@ -492,12 +488,7 @@ final class FloatingPanel: NSPanel {
                 fallbackAnchor = caret
                 fallbackPoint = CGPoint(x: caret.minX, y: caret.maxY)
                 state.pointerPosition = false; state.approximatePosition = false
-            } else if isEditable(focused), let field = fieldBounds(focused) {
-                // A verified editable field can anchor the fallback, but a generic
-                // focused container does not identify the editor or its padding.
-                let appKitField = appKitRect(field)
-                fallbackPoint = CGPoint(x: appKitField.minX, y: appKitField.maxY)
-                state.pointerPosition = false
+
             }
         }
         state.tokens = index.tokens; state.project = index.repository.full_name
@@ -528,15 +519,6 @@ final class FloatingPanel: NSPanel {
               rect.width >= 0, rect.height > 0 else { return nil }
         return rect
     }
-    private func fieldBounds(_ element: AXUIElement) -> CGRect? {
-        guard let position = attribute(element, kAXPositionAttribute), let size = attribute(element, kAXSizeAttribute),
-              CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID() else { return nil }
-        var point = CGPoint.zero
-        var dimensions = CGSize.zero
-        guard AXValueGetValue(unsafeBitCast(position, to: AXValue.self), .cgPoint, &point),
-              AXValueGetValue(unsafeBitCast(size, to: AXValue.self), .cgSize, &dimensions) else { return nil }
-        return CGRect(origin: point, size: dimensions)
-    }
     private func appKitRect(_ accessibilityRect: CGRect) -> CGRect {
         PickerPlacement.appKitRect(accessibilityRect, screens: NSScreen.screens.map(\.frame))
     }
@@ -561,9 +543,11 @@ final class FloatingPanel: NSPanel {
                 let caret = self.initialRange.flatMap { self.bounds(target, range: $0) }
                 if self.secureFocusDetected { self.dismiss(); return }
                 // Cursor support varies independently of permission and text insertion.
-                guard let rect = PickerPlacement.anchor(glyph: glyph, caret: caret, field: self.fieldBounds(target)) else { continue }
-                self.state.approximatePosition = glyph == nil && caret == nil
-                let anchor = self.appKitRect(rect)
+                let rect = PickerPlacement.anchor(glyph: glyph, caret: caret, field: nil)
+                self.state.approximatePosition = rect == nil
+                self.state.pointerPosition = rect == nil
+                let anchor = rect.map { self.appKitRect($0) }
+                    ?? CGRect(origin: self.fallbackPoint, size: CGSize(width: 1, height: 1))
                 guard let screen = NSScreen.screens.first(where: { $0.frame.intersects(anchor) || $0.frame.contains(anchor.origin) }) else { continue }
                 self.place(anchor: anchor, screen: screen)
                 if self.state.manualPosition { return }
@@ -642,10 +626,6 @@ final class FloatingPanel: NSPanel {
            let origin = positions.origin(app: ownerBundle, display: display, frame: screen.visibleFrame) {
             state.manualPosition = true
             panel?.setFrameOrigin(origin)
-        } else if state.manualOnly {
-            let frame = screen.visibleFrame
-            panel?.setFrameOrigin(PickerPlacement.clamp(CGPoint(x: frame.midX - PickerLayout.width / 2,
-                                                               y: frame.midY - PickerLayout.height / 2), visibleFrame: frame))
         } else {
             panel?.setFrameOrigin(PickerPlacement.origin(anchor: anchor, visibleFrame: screen.visibleFrame))
         }
