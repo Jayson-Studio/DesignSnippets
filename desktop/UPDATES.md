@@ -6,72 +6,39 @@ standard Update & Restart UI. Users can also choose **Check for Updates…** fro
 the menu bar, panel menu, or Preferences. Download/install remains user-controlled.
 Update checks never use the user's GitHub login token and send no system profile.
 
-## Automatic releases on push
+## Release from this Mac
 
-`.github/workflows/desktop-release.yml` releases every push to `main`. Feature
-branches do not publish. You can also run **Release macOS app** manually from
-GitHub Actions on `main`. The workflow uses an ephemeral GitHub-hosted macOS 15
-runner; your Mac does not need to stay on.
+Releases are built and published locally when requested. Pushing source to GitHub
+alone does not publish an app update; there is no automatic release workflow and
+no need to upload signing credentials to GitHub Actions.
 
-The workflow checks credentials, runs the desktop tests, allocates the next patch
-version from existing GitHub releases (including drafts), and increments the build
-number from the current public update feed. For example, 0.3.10 / build 17 becomes
-0.3.11 / build 18. An unreadable feed fails the job rather than guessing a version.
-There is no version-bump commit or recursive push. Releases are serialized without
-interrupting an active notarization. GitHub may coalesce pending pushes; the latest
-pending commit includes the earlier changes.
+Use the installed Developer ID Application identity, the existing `semantic-notary`
+Keychain profile, and the existing Sparkle private-key file. A worktree can point
+`SEMANTIC_UPDATE_PRIVATE_KEY_FILE` at the key in the original checkout without
+copying it. Never print or commit the key.
 
-It builds for Apple Silicon and Intel, signs with Developer ID, notarizes and
-staples the app, checks Gatekeeper, and verifies the archive's Sparkle signature
-against the public key already embedded in installed apps. It uploads the ZIP and
-appcast to a draft before publishing it as latest. Failures before publication
-leave the previous update available; failed drafts are retained for diagnosis and
-never overwritten. After publication it checks that both assets and the latest
-feed are publicly downloadable and identical to the generated files. An error in
-that final check reports failure but does not roll back an already published release.
+Run `npm run desktop:test`, commit and push the source, then prepare a release as
+shown below. Choose a new patch version and a build number greater than the current
+public appcast. `desktop/scripts/next-release.py` can calculate both from a paginated
+GitHub releases JSON array and the current appcast. Do not run simultaneous releases.
 
-### One-time Actions credentials
-
-Run this locally in Terminal (passwords are hidden and sent directly to encrypted
-GitHub Actions secrets; do not put them in chat or source control):
+After `npm run desktop:release` succeeds, publish with the same version/build
+variables still exported:
 
 ```sh
-bash desktop/scripts/setup-release-secrets.sh
+export GH_REPO=Jayson-Studio/DesignSnippets
+bash desktop/scripts/publish-release.sh
 ```
 
-Before running it, open **Keychain Access → My Certificates**, select the existing
-**Developer ID Application** certificate and its private key, and export just that
-identity as a password-protected `.p12`. Use the existing Apple app-specific
-password for notarization (or create one in your Apple Account). Use the existing
-`desktop/.secrets/sparkle-private-key` from the original project checkout; do not
-rotate it, since installed apps trust its matching public key.
+The publisher uses the current Git commit (or `SEMANTIC_RELEASE_COMMIT` if explicitly
+set), verifies the archive's signature against the public key installed apps trust,
+uploads the ZIP and appcast to a draft, then publishes it as latest. It verifies
+both public assets and the latest feed after publication. Failures before publishing
+leave the previous update live; failures in the final download check do not roll
+back an already published release. Versioned artifacts are never overwritten.
 
-The script configures these repository secrets:
-
-| Secret | Value |
-| --- | --- |
-| `APPLE_CERTIFICATE_P12_BASE64` | Base64-encoded Developer ID `.p12`, including private key |
-| `APPLE_CERTIFICATE_PASSWORD` | Password protecting that export |
-| `APPLE_ID` | Apple Account email for notarization |
-| `APPLE_TEAM_ID` | Developer team ID |
-| `APPLE_APP_SPECIFIC_PASSWORD` | Apple app-specific password for notarization |
-| `SPARKLE_PRIVATE_KEY` | Contents of the existing Sparkle signing-key file |
-
-No personal GitHub token is required: publication uses the job's `GITHUB_TOKEN`
-with `contents: write`. Signing material is installed in a temporary keychain and
-removed in an always-run cleanup step. The runner is then discarded. This follows
-[GitHub's certificate setup guidance](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications).
-
-Once credentials are configured, rerun a failed initial workflow or trigger:
-
-```sh
-gh workflow run desktop-release.yml --repo Jayson-Studio/DesignSnippets --ref main
-```
-
-Watch the Actions run, then choose **Check for Updates…** in the installed app.
-The existing signed release is the bootstrap for version allocation; this workflow
-intentionally does not create a first-ever feed. The manual release procedure below
-remains available for recovery. Do not publish manually while automation is running.
+Installed users then choose **Check for Updates…**; no manual rebuild or reinstall
+is needed for an existing updater-enabled app.
 
 ## One-time setup
 

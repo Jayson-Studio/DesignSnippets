@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Allocate from GitHub releases and the existing feed, under the CI release lock."""
+"""Allocate from GitHub releases and the existing feed, before a serialized local release."""
 import json
 import re
 import sys

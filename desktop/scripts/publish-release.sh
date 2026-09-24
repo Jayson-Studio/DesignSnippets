@@ -1,7 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-: "${SEMANTIC_VERSION:?}" "${SEMANTIC_BUILD_NUMBER:?}" "${GH_REPO:?}" "${GITHUB_SHA:?}"
+: "${SEMANTIC_VERSION:?}" "${SEMANTIC_BUILD_NUMBER:?}" "${GH_REPO:?}"
+release_commit="${SEMANTIC_RELEASE_COMMIT:-$(git rev-parse HEAD)}"
+git cat-file -e "$release_commit^{commit}"
 release="$PWD/desktop/build/releases/$SEMANTIC_VERSION"
 archive="$release/DesignSnippets-$SEMANTIC_VERSION-macOS.zip"
 feed="$release/appcast.xml"
@@ -12,11 +14,11 @@ Signed and notarized universal macOS release (Apple Silicon and Intel).
 
 Use **Check for Updates…** in DesignSnippets, or download the ZIP below.
 
-Source commit: $GITHUB_SHA
+Source commit: $release_commit
 Build: $SEMANTIC_BUILD_NUMBER
 EOF_NOTES
 # Keep the previous feed live until both assets are attached to the draft.
-gh release create "v$SEMANTIC_VERSION" --draft --target "$GITHUB_SHA" \
+gh release create "v$SEMANTIC_VERSION" --draft --target "$release_commit" \
   --title "DesignSnippets $SEMANTIC_VERSION" --notes-file "$release/notes.md"
 gh release upload "v$SEMANTIC_VERSION" "$archive" "$feed"
 gh release edit "v$SEMANTIC_VERSION" --draft=false --latest
