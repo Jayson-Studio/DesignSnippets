@@ -27,7 +27,9 @@ mkdir -p "$release"
 archive="$release/DesignSnippets-$SEMANTIC_VERSION-macOS.zip"
 [[ ! -e "$archive" ]] || { echo 'Release archive already exists; use a new version or explicitly move the old draft.' >&2; exit 1; }
 ditto -c -k --sequesterRsrc --keepParent desktop/build/DesignSnippets.app "$release/notarization.zip"
-xcrun notarytool submit "$release/notarization.zip" --keychain-profile "$SEMANTIC_NOTARY_PROFILE" --wait
+notary_args=(--keychain-profile "$SEMANTIC_NOTARY_PROFILE")
+if [[ -n "${SEMANTIC_NOTARY_KEYCHAIN:-}" ]]; then notary_args+=(--keychain "$SEMANTIC_NOTARY_KEYCHAIN"); fi
+xcrun notarytool submit "$release/notarization.zip" "${notary_args[@]}" --wait
 xcrun stapler staple desktop/build/DesignSnippets.app
 xcrun stapler validate desktop/build/DesignSnippets.app
 codesign --verify --deep --strict desktop/build/DesignSnippets.app

@@ -12,6 +12,7 @@ xcrun swiftc -swift-version 5 -module-cache-path "$PWD/desktop/build/module-cach
   -o desktop/build/picker-tests -framework AppKit -framework SwiftUI -framework ApplicationServices
 ./desktop/build/picker-tests -pickerRequested YES -pickerAllApps YES
 
+python3 desktop/Tests/test_release.py
 python3 desktop/Tests/test_update_config.py
 python3 desktop/Tests/test_github_config.py
 bash desktop/scripts/fetch-sparkle.sh

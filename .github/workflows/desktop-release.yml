@@ -1,0 +1,77 @@
+name: Release macOS app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One publisher at a time; never cancel a release during notarization/publication.
+concurrency:
+  group: desktop-production-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Reject an outdated source revision
+        run: |
+          current=$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')
+          if [[ "$current" != "$GITHUB_SHA" ]]; then
+            echo '::error::This revision is no longer main. Run the workflow on current main.'
+            exit 1
+          fi
+      - name: Check release credentials
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          for name in APPLE_CERTIFICATE_P12_BASE64 APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD SPARKLE_PRIVATE_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing Actions secret $name. See desktop/UPDATES.md."
+              exit 1
+            fi
+          done
+      - name: Test
+        run: bash desktop/scripts/test.sh
+      - name: Allocate release version
+        run: |
+          gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" > "$RUNNER_TEMP/releases.json"
+          curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' \
+            "https://github.com/$GH_REPO/releases/latest/download/appcast.xml" -o "$RUNNER_TEMP/latest-appcast.xml"
+          python3 desktop/scripts/next-release.py "$RUNNER_TEMP/releases.json" "$RUNNER_TEMP/latest-appcast.xml" >> "$GITHUB_ENV"
+      - name: Install signing credentials
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: bash desktop/scripts/ci-signing.sh
+      - name: Build, notarize, staple, and sign update
+        run: bash desktop/scripts/release.sh
+      - name: Publish release and update feed
+        run: bash desktop/scripts/publish-release.sh
+      - name: Remove signing credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/designsnippets-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/designsnippets-certificate.p12" "$RUNNER_TEMP/designsnippets-sparkle-key"
