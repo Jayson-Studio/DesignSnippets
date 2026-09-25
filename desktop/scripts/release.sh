@@ -2,6 +2,7 @@
 # Prepare artifacts only. Publishing is a separate, explicit operation.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+python3 desktop/scripts/sign-app.py --check-consent
 export SEMANTIC_REQUIRE_GITHUB=1
 python3 desktop/scripts/configure-github.py --check
 : "${SEMANTIC_SIGN_IDENTITY:?Set an installed Developer ID Application signing identity}"
@@ -21,11 +22,15 @@ key="${SEMANTIC_UPDATE_PRIVATE_KEY_FILE:-$PWD/desktop/.secrets/sparkle-private-k
 [[ -f "$key" ]] || { echo 'Restore the private update-signing key before releasing.' >&2; exit 1; }
 export SEMANTIC_REQUIRE_UPDATES=1
 export SEMANTIC_ARCH=universal
-bash desktop/scripts/build.sh
 release="$PWD/desktop/build/releases/$SEMANTIC_VERSION"
 mkdir -p "$release"
 archive="$release/DesignSnippets-$SEMANTIC_VERSION-macOS.zip"
 [[ ! -e "$archive" ]] || { echo 'Release archive already exists; use a new version or explicitly move the old draft.' >&2; exit 1; }
+if [[ -n "${SEMANTIC_RESUME_SIGNING:-}" ]]; then
+  bash desktop/scripts/build.sh --resume-signing "$SEMANTIC_RESUME_SIGNING"
+else
+  bash desktop/scripts/build.sh
+fi
 ditto -c -k --sequesterRsrc --keepParent desktop/build/DesignSnippets.app "$release/notarization.zip"
 notary_args=(--keychain-profile "$SEMANTIC_NOTARY_PROFILE")
 if [[ -n "${SEMANTIC_NOTARY_KEYCHAIN:-}" ]]; then notary_args+=(--keychain "$SEMANTIC_NOTARY_KEYCHAIN"); fi

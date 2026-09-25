@@ -78,6 +78,8 @@ Example values below illustrate the workflow; replace the identity, profile, and
 hosting URL with the actual configured values.
 
 ```sh
+# Explicitly permits Keychain prompts. Omit this to keep production signing paused.
+export SEMANTIC_ALLOW_KEYCHAIN_PROMPTS=1
 export SEMANTIC_SIGN_IDENTITY='Developer ID Application: Your Name (TEAMID)'
 export SEMANTIC_NOTARY_PROFILE='semantic-notary'
 export SEMANTIC_VERSION='0.3.0'
@@ -125,3 +127,48 @@ archive. Automated configuration tests do not establish end-to-end installation.
 References: [Sparkle setup](https://sparkle-project.org/documentation/),
 [programmatic integration](https://sparkle-project.org/documentation/programmatic-setup/),
 [publishing updates](https://sparkle-project.org/documentation/publishing/).
+
+## Signing prompts and recovery
+
+Production builds and releases now stop **before building or accessing Keychain**
+unless `SEMANTIC_ALLOW_KEYCHAIN_PROMPTS=1` is explicitly set. This is consent to
+interactive signing, not a way to suppress prompts. Leave it unset while diagnosing
+an issue without prompts. Development builds with the default ad-hoc identity do
+not access the Developer ID private key.
+
+The six inside-out signing operations are required by the current packaging setup.
+The old build discarded its staging directory after a failure, so restarting repeated
+all six operations. Production signing now retains the exact staged app and a
+checkpoint after each successfully verified operation. Each operation has a two-minute
+timeout and failures stop immediately, without automatic retries. No passwords or
+private-key material are stored in the checkpoint.
+
+After separately resolving signing access, resume with the same version, build,
+identity, notarization profile, and update-key path as the original release:
+
+```sh
+# Only set this when ready to allow signing prompts again.
+export SEMANTIC_ALLOW_KEYCHAIN_PROMPTS=1
+export SEMANTIC_RESUME_SIGNING='/absolute/checkout/desktop/build/staging.XXXXXX/DesignSnippets.app'
+npm run desktop:release
+```
+
+Use the exact staged path printed on failure. Resume re-verifies completed signatures,
+checks the entire staged bundle and build inputs against their recorded hashes, and refuses changed files,
+a different identity, or mismatched version/build numbers. It signs only unfinished
+components. Resume refuses source changes; to include new changes, unset
+`SEMANTIC_RESUME_SIGNING` and build anew. If notarization failed after the signed build
+was promoted out of staging, this signing-resume path does not apply.
+
+A no-prompt preflight cannot establish that a later `codesign` process will be allowed
+to use the private key. Do not test that by silently attempting another signature.
+The signing checkpoint and consent gate fix repeated work and accidental prompts;
+they do not repair Keychain permissions or guarantee prompt-free signing.
+
+For Mac-side diagnosis, follow Apple's [Resolving errSecInternalComponent errors during code signing](https://developer.apple.com/forums/thread/712005).
+That error alone does not prove a specific cause: certificate trust, a locked keychain,
+and private-key access can all be involved. When the owner is ready, they can inspect
+the specific Developer ID certificate and its private key in Keychain Access. Any
+change to private-key access should be limited to the necessary Apple signing tool;
+do not allow every application, alter certificate trust, or change keychain-wide
+access rules as a shortcut. Such changes may themselves require authentication.

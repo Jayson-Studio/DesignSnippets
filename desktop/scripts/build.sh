@@ -7,11 +7,42 @@ if [[ "${DESIGNSNIPPETS_BUILD_SNAPSHOT:-0}" != "1" ]]; then
   exec /bin/bash -c "$(cat "$0")" "$0" "$@"
 fi
 cd "$(dirname "$0")/../.."
+identity="${SEMANTIC_SIGN_IDENTITY:--}"
+if [[ "$identity" != "-" ]]; then
+  python3 desktop/scripts/sign-app.py --check-consent
+fi
+# Resume only an explicitly selected, unchanged staged app. No rebuild or re-copy.
+if [[ "${1:-}" == "--resume-signing" ]]; then
+  [[ "$identity" != "-" && -n "${2:-}" && "$#" == 2 ]] || { echo 'Resume requires a staged app and Developer ID identity.' >&2; exit 1; }
+  app="$(cd "$(dirname "$2")" && pwd -P)/$(basename "$2")"
+  case "$app" in
+    "$PWD"/desktop/build/staging.*/DesignSnippets.app) ;;
+    *) echo 'Resume requires a staged app from this checkout.' >&2; exit 1 ;;
+  esac
+  [[ ! -L "$app" ]] || { echo 'Cannot resume a symlinked app.' >&2; exit 1; }
+  python3 desktop/scripts/sign-app.py "$app" --identity "$identity"
+  destination="$PWD/desktop/build/DesignSnippets.app"
+  [[ "$app" != "$destination" ]] || { echo 'Resume requires the staged app, not the published build.' >&2; exit 1; }
+  rm -rf "$destination"
+  mv "$app" "$destination"
+  printf '\nBuilt %s\n' "$destination"
+  exit 0
+fi
+[[ "$#" == 0 ]] || { echo 'Unknown build arguments.' >&2; exit 1; }
 python3 desktop/scripts/configure-github.py --check
 output="$PWD/desktop/build"
 mkdir -p "$output"
 staging=$(mktemp -d "$output/staging.XXXXXX")
-trap 'rm -rf "$staging"' EXIT
+preserve_staging=0
+cleanup() {
+  if [[ "$preserve_staging" == 1 ]]; then
+    printf '\nSigning paused; staged app retained at: %s\n' "$app" >&2
+    printf 'After resolving signing access, resume this exact app with SEMANTIC_RESUME_SIGNING set to that path.\n' >&2
+  else
+    rm -rf "$staging"
+  fi
+}
+trap cleanup EXIT
 app="$staging/DesignSnippets.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$output/module-cache"
 cp -R desktop/Resources/Fonts "$app/Contents/Resources/"
@@ -66,7 +97,6 @@ for pixels in 16 32 128 256 512; do
   sips -z "$double" "$double" "$output/icon.png" --out "$iconset/icon_$pixels"x"$pixels@2x.png" >/dev/null
 done
 iconutil -c icns "$iconset" -o "$app/Contents/Resources/DesignSnippets.icns"
-identity="${SEMANTIC_SIGN_IDENTITY:--}"
 if [[ "$identity" == "-" ]]; then
   # Development only: allow the vendor-signed Sparkle framework in an ad-hoc app.
   cat > "$output/development.entitlements" <<'ENTITLEMENTS'
@@ -76,19 +106,12 @@ if [[ "$identity" == "-" ]]; then
 ENTITLEMENTS
   codesign --force --sign - --options runtime --entitlements "$output/development.entitlements" "$app"
 else
-  framework="$app/Contents/Frameworks/Sparkle.framework"
-  # Sign inside-out and preserve the helper services' original entitlements.
-  signing_step=0
-  for component in "$framework/Versions/B/XPCServices/Downloader.xpc" "$framework/Versions/B/XPCServices/Installer.xpc" "$framework/Versions/B/Autoupdate" "$framework/Versions/B/Updater.app" "$framework"; do
-    signing_step=$((signing_step + 1))
-    printf "Signing [%s/6]: %s — approve any macOS Keychain prompt for codesign.\n" "$signing_step" "$(basename "$component")"
-    codesign --force --sign "$identity" --options runtime --timestamp --preserve-metadata=entitlements "$component"
-  done
-  printf "Signing [6/6]: DesignSnippets.app\n"
-  codesign --force --sign "$identity" --options runtime --timestamp "$app"
+  preserve_staging=1
+  python3 desktop/scripts/sign-app.py "$app" --identity "$identity"
 fi
 codesign --verify --deep --strict "$app"
 # Publish only the completely signed, verified bundle. Never reuse old seals.
 rm -rf "$output/DesignSnippets.app"
 mv "$app" "$output/DesignSnippets.app"
+preserve_staging=0
 printf '\nBuilt %s\n' "$output/DesignSnippets.app"
