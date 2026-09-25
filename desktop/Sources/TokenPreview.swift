@@ -138,7 +138,10 @@ struct TokenBadge: View {
         let isText = kind == "typography" || token.name.contains("font") || (token.name.contains("text") && kind != "color")
         ZStack(alignment: .topLeading) {
             Color.white.opacity(0.19)
-            if kind == "color", let color = TokenPreview.color(value) {
+            if token.pickerSection == "Icons", value.count <= 3, !value.isEmpty {
+                Text(value).font(.system(size: size * 0.6)).foregroundStyle(Protegia.text)
+                    .frame(width: size, height: size)
+            } else if kind == "color", let color = TokenPreview.color(value) {
                 RoundedRectangle(cornerRadius: size * 0.13).fill(Color(nsColor: color))
                     .overlay(RoundedRectangle(cornerRadius: size * 0.13).stroke(.white.opacity(0.15),lineWidth: 0.5)).padding(size * 0.16)
             } else if (kind == "radius" || token.name.contains("radius")), let radius {

@@ -69,6 +69,15 @@ import CoreText
         picker.query = ""
         picker.tokens = [DesignToken(name: "--carbon-400", value: "rgb(90, 90, 96)", kind: "Color", source: "theme.css"), DesignToken(name: "--color-text-accent", value: "var(--carbon-400)", kind: "Color", source: "theme.css"), DesignToken(name: "--text-h3", value: #"{"fontSize":"24px","fontWeight":600,"letterSpacing":"0.2px","lineHeight":"32px","fontFamily":"Inter"}"#, kind: "Typography", source: "theme.css")]
         try render(PickerView(state: picker), name: "token-picker-ranked-text") { picker.appendQuery("text") }
+        picker.query = ""
+        picker.tokens += [DesignToken(name: "components.button", value: "Button", kind: "Class", source: "tokens.json", section: "Components")]
+        try render(PickerView(state: picker), name: "token-picker-components") { picker.selectSection("Components") }
+        picker.tokens += [("close", "×"), ("check", "✓"), ("plus", "+"), ("arrow", "→"), ("star", "☆"), ("circle", "○")].map {
+            DesignToken(name: "icons." + $0.0, value: $0.1, kind: "Icon", source: "tokens.json", section: "Icons")
+        }
+        try render(PickerView(state: picker), name: "token-picker-icons") { picker.selectSection("Icons") }
+        try render(PickerView(state: picker), name: "token-picker-getting-started") { picker.selectSection("Getting Started") }
+        picker.selectSection("Foundations")
         if let flag = CommandLine.arguments.firstIndex(of: "--token-fixture"), CommandLine.arguments.indices.contains(flag + 1) {
             let indices = try JSONDecoder().decode([TokenIndex].self, from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[flag + 1])))
             picker.tokens = indices.first?.tokens ?? []

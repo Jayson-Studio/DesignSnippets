@@ -7,6 +7,17 @@ struct DesignToken: Codable, Identifiable, Equatable {
     let kind: String
     let source: String
     var typography: [String: String]? = nil
+    var section: String? = nil
+
+    var pickerSection: String {
+        if let section, !section.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return section }
+        if kind.lowercased() == "icon" || kind == "Class" && name.range(of: #"^\.(?:icon|ico)[-_]"#, options: .regularExpression) != nil { return "Icons" }
+        let parts = source.lowercased().split(separator: "/").map(String.init)
+        for (path, title) in [("getting-started", "Getting Started"), ("icons", "Icons"), ("brand", "Brand"), ("pages", "Pages"), ("widgets", "Widgets"), ("elements", "Elements"), ("components", "Components")] {
+            if parts.contains(path) { return title }
+        }
+        return kind == "Class" ? "Components" : "Foundations"
+    }
 }
 struct Repository: Codable, Identifiable, Equatable {
     let id: Int
@@ -89,7 +100,9 @@ enum TokenParser {
                 else if let number = value as? NSNumber { string = number.stringValue }
                 else if JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]), let raw = String(data: data, encoding: .utf8) { string = raw }
                 else { return }
-                result.append(DesignToken(name: path.joined(separator: "."), value: string, kind: type?.capitalized ?? "Token", source: source))
+                let headings = ["foundations": "Foundations", "foundation-tokens": "Foundations", "getting-started": "Getting Started", "components": "Components", "icons": "Icons", "brand": "Brand", "pages": "Pages", "widgets": "Widgets", "elements": "Elements"]
+                let section = path.first.flatMap { headings[$0.lowercased()] }
+                result.append(DesignToken(name: path.joined(separator: "."), value: string, kind: type?.capitalized ?? "Token", source: source, section: section))
                 return
             }
             for key in node.keys.sorted() where !key.hasPrefix("$") && key != "type" {

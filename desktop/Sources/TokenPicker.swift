@@ -4,14 +4,31 @@ import Carbon
 import SwiftUI
 
 enum PickerLayout {
-    static let width: CGFloat = 350
-    static let height: CGFloat = 300
+    static let width: CGFloat = 420
+    static let height: CGFloat = 320
     static let size = CGSize(width: width, height: height)
 }
 
 @MainActor final class PickerState: ObservableObject {
     @Published var query = ""
+    @Published private(set) var activeSection = "Foundations"
     @Published var selected = 0
+    var sections: [String] {
+        let additional = Set(tokens.map(\.pickerSection)).subtracting(["Foundations", "Getting Started", "Components", "Icons"]).sorted()
+        return ["Foundations", "Getting Started", "Components"] + additional + ["Icons"]
+    }
+    func selectSection(_ section: String, pointer: CGPoint? = nil) {
+        guard sections.contains(section) else { return }
+        activeSection = section
+        selected = 0
+        selectionFromPointer = false
+        lastPointerPosition = pointer
+    }
+    func moveSection(_ delta: Int, pointer: CGPoint? = nil) {
+        let tabs = sections
+        let current = tabs.firstIndex(of: activeSection) ?? 0
+        selectSection(tabs[(current + delta % tabs.count + tabs.count) % tabs.count], pointer: pointer)
+    }
     @Published var selectionFromPointer = false
     private var lastPointerPosition: CGPoint?
     @Published var tokens: [DesignToken] = []
@@ -51,7 +68,8 @@ enum PickerLayout {
     }
     func deleteQueryCharacter() { if !query.isEmpty { query.removeLast() }; selected = 0 }
     var matches: [DesignToken] {
-        guard !query.isEmpty else { return tokens }
+        let candidates = tokens.filter { $0.pickerSection == activeSection }
+        guard !query.isEmpty else { return candidates }
         func normalized(_ name: String) -> String {
             var value = name.lowercased()
             if value.hasPrefix("--") { value.removeFirst(2) }
@@ -63,7 +81,7 @@ enum PickerLayout {
             let name = normalized(token.name)
             return name == needle ? 0 : name.hasPrefix(needle) ? 1 : 2
         }
-        return tokens.enumerated().filter { $0.element.name.localizedCaseInsensitiveContains(query) }
+        return candidates.enumerated().filter { $0.element.name.localizedCaseInsensitiveContains(query) }
             .sorted { left, right in
                 let a = rank(left.element), b = rank(right.element)
                 return a == b ? left.offset < right.offset : a < b
@@ -73,46 +91,100 @@ enum PickerLayout {
 struct PickerView: View {
     @ObservedObject var state: PickerState
     var body: some View {
-        // Capture the current results outside ScrollViewReader's retained closure.
-        // Reading the reference inside that closure can leave old rows onscreen
-        // even while the observed query in the header updates.
         let matches = state.matches
         VStack(spacing: 0) {
-            HStack { Image(systemName: "magnifyingglass").foregroundStyle(Protegia.tertiary); Text(state.query.isEmpty ? "Search for a token" : state.query).font(state.query.isEmpty ? .system(size: 12, weight: .light) : Protegia.font(12)).foregroundStyle(state.query.isEmpty ? Protegia.text.opacity(0.45) : Protegia.text).lineLimit(1); Spacer(); Image(systemName: "line.3.horizontal").foregroundStyle(Protegia.tertiary); Text("esc").font(Protegia.font(10)).foregroundStyle(Protegia.tertiary) }.padding(14)
-                .overlay(PickerDragHeader(state: state))
-            ProtegiaDivider()
+            // Retain a drag target without adding header copy or stealing tab clicks.
+            Color.clear.frame(height: 12).overlay(PickerDragHeader(state: state))
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 2) {
-                        if matches.isEmpty { Text("No matching tokens").font(Protegia.font(12)).foregroundStyle(Protegia.secondary).padding(25) }
-                        ForEach(Array(matches.enumerated()), id: \.element.id) { index, token in
-                            Button { state.choose?(token) } label: {
-                                HStack(spacing: 12) {
-                                    TokenBadge(token: token, tokens: state.tokens)
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(token.name).font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(1)
-                                        Text(TokenPreview.pickerDefinition(token, tokens: state.tokens)).font(Protegia.font(11)).foregroundStyle(Protegia.secondary).fixedSize(horizontal: false, vertical: true)
-                                    }
-                                    Spacer(minLength: 6)
-                                    Text(index == state.selected ? "↵" : "").font(.system(size: 10, design: .monospaced)).foregroundStyle(Protegia.secondary).lineLimit(1).frame(width: 15)
-                                }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(index == state.selected ? Protegia.level1 : .clear, in: RoundedRectangle(cornerRadius: Protegia.controlRadius)).contentShape(Rectangle())
-                            }.buttonStyle(.plain).id(token.id)
-                                .onContinuousHover { phase in
-                                    if case .active = phase { state.hoverSelection(index, at: NSEvent.mouseLocation) }
-                                }
-                        }
-                    }.padding(10)
-                }.onChange(of: state.selected) { _, value in
+                    if matches.isEmpty {
+                        VStack(spacing: 6) {
+                            Text(state.query.isEmpty ? "No entries in \(state.activeSection)" : "No matching entries")
+                                .font(Protegia.font(12, bold: true))
+                            Text(state.query.isEmpty ? "Entries appear here when included in your imported files." : "Try another search or switch tabs.")
+                                .font(Protegia.font(11)).foregroundStyle(Protegia.tertiary)
+                        }.multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(30)
+                    } else if state.activeSection == "Icons" {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
+                            ForEach(Array(matches.enumerated()), id: \.element.id) { index, token in
+                                entry(token, index: index, grid: true)
+                            }
+                        }.padding(.horizontal, 14).padding(.vertical, 4)
+                    } else {
+                        LazyVStack(spacing: 8) {
+                            ForEach(Array(matches.enumerated()), id: \.element.id) { index, token in
+                                entry(token, index: index, grid: false)
+                            }
+                        }.padding(.horizontal, 14).padding(.vertical, 4)
+                    }
+                }
+                .onChange(of: state.selected) { _, value in
                     if !state.selectionFromPointer, matches.indices.contains(value) { proxy.scrollTo(matches[value].id, anchor: .center) }
                 }
                 .onChange(of: state.query) { _, _ in
                     if let first = matches.first { proxy.scrollTo(first.id, anchor: .top) }
                 }
+                .onChange(of: state.activeSection) { _, _ in
+                    if let first = matches.first { proxy.scrollTo(first.id, anchor: .top) }
+                }
             }
-            ProtegiaDivider()
-            HStack { Text(state.project).lineLimit(1); Spacer(); Text(state.canInsert ? "↑↓ select  ·  ↵ insert" : "↵ copy · paste into editor") }.font(Protegia.font(10)).foregroundStyle(Protegia.secondary).padding(11)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(state.sections, id: \.self) { section in
+                            Button { state.selectSection(section, pointer: NSEvent.mouseLocation) } label: {
+                                Text(section).font(Protegia.font(12, bold: true)).fixedSize()
+                                    .padding(.horizontal, 12).padding(.vertical, 10)
+                                    .background(state.activeSection == section ? Protegia.level2 : .clear, in: Capsule())
+                            }.buttonStyle(.plain).id(section)
+                                .accessibilityAddTraits(state.activeSection == section ? .isSelected : [])
+                        }
+                    }.padding(.horizontal, 14).padding(.vertical, 10)
+                }.onChange(of: state.activeSection) { _, section in proxy.scrollTo(section, anchor: .center) }
+            }
+            ProtegiaDivider().padding(.horizontal, 14)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(Protegia.tertiary)
+                Text(state.query.isEmpty ? "Search for a token" : state.query)
+                    .foregroundStyle(state.query.isEmpty ? Protegia.tertiary : Protegia.text).lineLimit(1)
+                Spacer()
+                Text("esc").font(Protegia.font(11)).foregroundStyle(Protegia.tertiary)
+            }.padding(14).overlay(PickerDragHeader(state: state))
         }.frame(width: PickerLayout.width, height: PickerLayout.height).background(Protegia.base)
         .foregroundStyle(Protegia.text).font(Protegia.font(12)).tint(Protegia.accent).preferredColorScheme(.dark)
+    }
+
+    private func entry(_ token: DesignToken, index: Int, grid: Bool) -> some View {
+        Button { state.choose?(token) } label: {
+            Group {
+                if grid {
+                    VStack(spacing: 6) {
+                        TokenBadge(token: token, tokens: state.tokens, size: 32)
+                        Text(token.name).font(Protegia.font(9)).lineLimit(1)
+                    }.frame(maxWidth: .infinity).frame(height: 64)
+                } else {
+                    HStack(spacing: 12) {
+                        TokenBadge(token: token, tokens: state.tokens, size: 36)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(token.name).font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(1)
+                            Text(TokenPreview.pickerDefinition(token, tokens: state.tokens))
+                                .font(Protegia.font(11)).foregroundStyle(Protegia.tertiary).lineLimit(2)
+                        }
+                        Spacer(minLength: 6)
+                        Text(index == state.selected ? "↵" : "").font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(Protegia.secondary).frame(width: 15)
+                    }.padding(10)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+                .background(index == state.selected ? Protegia.level2 : Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).id(token.id)
+            .accessibilityLabel(token.name)
+            .accessibilityAddTraits(index == state.selected ? .isSelected : [])
+            .help("\(token.name): \(token.value)")
+            .onContinuousHover { phase in
+                if case .active = phase { state.hoverSelection(index, at: NSEvent.mouseLocation) }
+            }
     }
 }
 // Move only our nonactivating panel; global coordinates avoid drag feedback.
@@ -389,8 +461,12 @@ final class FloatingPanel: NSPanel {
             dismiss(); return false
         }
         if (pendingTrigger || target != nil || copyOnlyFallback), front.processIdentifier == pid,
-           flags.isEmpty, code == 125 || code == 126 {
-            state.moveSelection(code == 125 ? 1 : -1, pointer: NSEvent.mouseLocation)
+           flags.isEmpty, [123, 124, 125, 126].contains(code) {
+            if code == 123 || code == 124 {
+                state.moveSection(code == 124 ? 1 : -1, pointer: NSEvent.mouseLocation)
+            } else {
+                state.moveSelection(code == 125 ? 1 : -1, pointer: NSEvent.mouseLocation)
+            }
             return true
         }
         if pendingTrigger {
@@ -433,7 +509,7 @@ final class FloatingPanel: NSPanel {
         state.manualOnly = PickerEditor.usesManualPosition(bundle: ownerBundle)
         // Preserve the last click in this app even when the pointer moves while typing.
         fallbackPoint = lastClick?.pid == pid ? lastClick!.point : NSEvent.mouseLocation
-        state.tokens = model.tokens; state.project = model.activeIndex?.repository.full_name ?? ""; state.selected = 0
+        state.tokens = model.tokens; state.selectSection("Foundations", pointer: NSEvent.mouseLocation); state.project = model.activeIndex?.repository.full_name ?? ""; state.selected = 0
         // AX requests from inside the event-tap callback can block delivery to the editor.
         // Resolve focus after delivery, with retries for lazily-created accessibility trees.
         beginTask = Task { [weak self] in
