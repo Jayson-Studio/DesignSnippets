@@ -6,6 +6,7 @@ struct SemanticPanel: View {
     @ObservedObject var model: AppModel
     var appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development"
     @State private var search = ""
+    @State private var selectedTab = "Default"
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 9) {
@@ -28,7 +29,22 @@ struct SemanticPanel: View {
                     .accessibilityLabel("App menu").help("App menu")
             }.padding(Protegia.spaceLG)
             ProtegiaDivider()
-            ScrollView {
+            HStack(spacing: 0) {
+                ForEach(["Default", "Preview"], id: \.self) { tab in
+                    Button { selectedTab = tab } label: {
+                        Text(tab).font(Protegia.font(12, bold: true))
+                            .foregroundStyle(selectedTab == tab ? Protegia.text : Protegia.secondary)
+                            .frame(maxWidth: .infinity).padding(.vertical, 11)
+                            .background(alignment: .bottom) {
+                                if selectedTab == tab { Rectangle().fill(Protegia.accent).frame(height: 2) }
+                            }
+                    }.buttonStyle(.plain).accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
+                }
+            }
+            ProtegiaDivider()
+            if selectedTab == "Preview" {
+                PreviewSandbox(model: model)
+            } else { ScrollView {
                 VStack(alignment: .leading, spacing: Protegia.spaceBase) {
                     if model.screen != "home" { Button { model.screen = "home"; model.error = nil } label: { Label("Back", systemImage: "chevron.left") }.buttonStyle(.plain).foregroundStyle(Protegia.secondary).font(Protegia.font(12)) }
                     if let device = model.deviceCode { deviceView(device) }
@@ -40,7 +56,7 @@ struct SemanticPanel: View {
                     if model.busy { HStack(alignment: .top, spacing: 9) { ProgressView().controlSize(.small); Text(model.status).font(Protegia.font(12)).foregroundStyle(Protegia.secondary); Spacer(); Button("Cancel") { model.cancel() }.font(Protegia.font(10)) } }
                     if let error = model.error { Text(error).font(Protegia.font(12)).foregroundStyle(Protegia.destructive).textSelection(.enabled).padding(11).frame(maxWidth: .infinity, alignment: .leading).background(Protegia.destructive.opacity(0.10), in: RoundedRectangle(cornerRadius: 8)) }
                 }.padding(Protegia.spaceLG)
-            }
+            } }
             ProtegiaDivider()
             HStack {
                 Circle().fill(model.pickerEnabled ? Protegia.accent : Protegia.tertiary).frame(width: 5, height: 5)

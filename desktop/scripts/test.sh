@@ -8,7 +8,7 @@ xcrun swiftc -swift-version 5 -module-cache-path "$PWD/desktop/build/module-cach
 ./desktop/build/semantic-tests
 
 xcrun swiftc -swift-version 5 -module-cache-path "$PWD/desktop/build/module-cache" \
-  desktop/Sources/Models.swift desktop/Sources/GitHub.swift desktop/Sources/AppModel.swift desktop/Sources/ProtegiaTheme.swift desktop/Sources/TokenPicker.swift desktop/Sources/TokenPreview.swift desktop/Sources/Views.swift desktop/Tests/PickerTests.swift \
+  desktop/Sources/Models.swift desktop/Sources/GitHub.swift desktop/Sources/AppModel.swift desktop/Sources/ProtegiaTheme.swift desktop/Sources/TokenPicker.swift desktop/Sources/TokenPreview.swift desktop/Sources/PreviewSandbox.swift desktop/Sources/Views.swift desktop/Tests/PickerTests.swift \
   -o desktop/build/picker-tests -framework AppKit -framework SwiftUI -framework ApplicationServices
 ./desktop/build/picker-tests -pickerRequested YES -pickerAllApps YES
 
