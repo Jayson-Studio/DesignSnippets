@@ -90,11 +90,13 @@ enum PickerLayout {
 }
 struct PickerView: View {
     @ObservedObject var state: PickerState
+    var allowsDragging = true
     var body: some View {
         let matches = state.matches
         VStack(spacing: 0) {
             // Retain a drag target without adding header copy or stealing tab clicks.
-            Color.clear.frame(height: 12).overlay(PickerDragHeader(state: state))
+            Color.clear.frame(height: 12)
+                .overlay { if allowsDragging { PickerDragHeader(state: state) } }
             ScrollViewReader { proxy in
                 ScrollView {
                     if matches.isEmpty {
@@ -149,7 +151,7 @@ struct PickerView: View {
                     .foregroundStyle(state.query.isEmpty ? Protegia.tertiary : Protegia.text).lineLimit(1)
                 Spacer()
                 Text("esc").font(Protegia.font(11)).foregroundStyle(Protegia.tertiary)
-            }.padding(14).overlay(PickerDragHeader(state: state))
+            }.padding(14).overlay { if allowsDragging { PickerDragHeader(state: state) } }
         }.frame(width: PickerLayout.width, height: PickerLayout.height).background(Protegia.base)
         .foregroundStyle(Protegia.text).font(Protegia.font(12)).tint(Protegia.accent).preferredColorScheme(.dark)
     }

@@ -66,7 +66,10 @@ struct SemanticPanel: View {
             }.padding(.horizontal, Protegia.spaceLG).padding(.vertical, 13)
         }.frame(width: 420, height: 620).background(Protegia.base)
         .foregroundStyle(Protegia.text).font(Protegia.font(14)).tint(Protegia.accent).preferredColorScheme(.dark)
-        .onChange(of: model.screen) { _, _ in search = "" }
+        .onChange(of: model.screen) { _, screen in
+            search = ""
+            if screen != "home" { selectedTab = "Default" }
+        }
     }
     private var home: some View {
         VStack(alignment: .leading, spacing: Protegia.spaceBase) {

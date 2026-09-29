@@ -13,6 +13,13 @@ import SwiftUI
 
     init() { picker.choose = { [weak self] token in self?.insert(token) } }
 
+    func freshHashTyped() { dismissedTriggerLocation = nil; close() }
+
+    func selectionChanged(_ selection: NSRange) {
+        self.selection = selection
+        if let range = triggerRange, (selection.length != 0 || selection.location != NSMaxRange(range)) { dismiss() }
+    }
+
     func update(_ value: String, selection: NSRange) {
         text = value
         self.selection = selection
@@ -42,7 +49,7 @@ import SwiftUI
         switch keyCode {
         case 123, 124: picker.moveSection(keyCode == 124 ? 1 : -1); return true
         case 125, 126: picker.moveSelection(keyCode == 125 ? 1 : -1); return true
-        case 53: dismissedTriggerLocation = triggerRange?.location; close(); return true
+        case 53: dismiss(); return true
         case 36, 76, 48:
             guard !picker.matches.isEmpty else { close(); return false }
             insert(picker.matches[min(picker.selected, picker.matches.count - 1)])
@@ -52,7 +59,10 @@ import SwiftUI
     }
 
     private func insert(_ token: DesignToken) {
-        guard let range = triggerRange else { return }
+        guard let range = triggerRange,
+              selection.length == 0, selection.location == NSMaxRange(range),
+              NSMaxRange(range) <= (text as NSString).length,
+              (text as NSString).substring(with: range) == "#" + picker.query else { close(); return }
         text = (text as NSString).replacingCharacters(in: range, with: token.name)
         selection = NSRange(location: range.location + token.name.utf16.count, length: 0)
         dismissedTriggerLocation = nil
@@ -60,6 +70,7 @@ import SwiftUI
     }
 
     func close() { isOpen = false; triggerRange = nil }
+    func dismiss() { dismissedTriggerLocation = triggerRange?.location; close() }
 }
 
 struct PreviewSandbox: View {
@@ -97,7 +108,7 @@ struct PreviewSandbox: View {
             }.padding(Protegia.spaceLG)
             if session.isOpen {
                 ProtegiaDivider()
-                PickerView(state: session.picker)
+                PickerView(state: session.picker, allowsDragging: false)
             }
             Spacer(minLength: 0)
         }
@@ -130,6 +141,8 @@ private struct PreviewEditor: NSViewRepresentable {
         editor.isHorizontallyResizable = false
         editor.textContainer?.widthTracksTextView = true
         editor.onCommand = { [weak session] keyCode in session?.command(keyCode) ?? false }
+        editor.onFreshHash = { [weak session] in session?.freshHashTyped() }
+        editor.onModifiedShortcut = { [weak session] in session?.dismiss() }
         scroll.documentView = editor
         return scroll
     }
@@ -151,11 +164,27 @@ private struct PreviewEditor: NSViewRepresentable {
             guard let editor = notification.object as? NSTextView else { return }
             session.update(editor.string, selection: editor.selectedRange())
         }
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let editor = notification.object as? NSTextView, editor.string == session.text else { return }
+            session.selectionChanged(editor.selectedRange())
+        }
     }
 
     final class PreviewTextView: NSTextView {
         var onCommand: ((UInt16) -> Bool)?
+        var onFreshHash: (() -> Void)?
+        var onModifiedShortcut: (() -> Void)?
         override func keyDown(with event: NSEvent) {
+            let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+            if event.characters == "#" && modifiers.intersection([.command, .control, .option]).isEmpty {
+                onFreshHash?()
+            }
+            if !modifiers.intersection([.command, .control, .option]).isEmpty ||
+                (modifiers.contains(.shift) && [123, 124, 125, 126, 36, 76, 48, 53].contains(event.keyCode)) {
+                onModifiedShortcut?()
+                super.keyDown(with: event)
+                return
+            }
             if onCommand?(event.keyCode) == true { return }
             super.keyDown(with: event)
         }
