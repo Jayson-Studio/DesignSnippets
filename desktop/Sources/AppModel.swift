@@ -117,24 +117,53 @@ import SwiftUI
         do { sync(repo, paths: try GitHubClient.filePaths(tokenFilePaths.components(separatedBy: .newlines))) }
         catch { self.error = error.localizedDescription }
     }
+    func addPickerTab(path rawPath: String, completion: @escaping (Result<PickerTab, Error>) -> Void) {
+        guard let index = activeIndex else { completion(.failure(SemanticError("Choose a project before adding a tab."))); return }
+        guard index.repository.id != 0 else { completion(.failure(SemanticError("Connect a GitHub project to add a file-backed tab."))); return }
+        guard !busy else { completion(.failure(SemanticError("Wait for the current import to finish."))); return }
+        do {
+            let path = try GitHubClient.filePaths([rawPath])[0]
+            let paths = index.sourceFiles ?? Array(Set(index.tokens.map(\.source))).sorted()
+            guard !paths.contains(path) else { throw SemanticError("This file is already included in the project.") }
+            let tabs = index.pickerTabs ?? []
+            let tab = PickerTab(title: PickerTab.title(for: path, existing: tabs), path: path)
+            sync(index.repository, paths: paths + [path], pickerTabs: tabs + [tab]) { result in
+                completion(result.map { _ in tab })
+            }
+        } catch { completion(.failure(error)) }
+    }
     func refreshTokens(_ repo: Repository) {
         guard let paths = indices.first(where: { $0.repository.id == repo.id })?.sourceFiles else { chooseFiles(repo); return }
         sync(repo, paths: paths)
     }
-    func sync(_ repo: Repository, paths: [String]) {
-        guard token != nil else { error = "Connect GitHub before syncing this repository."; screen = "home"; return }
+    func sync(_ repo: Repository, paths: [String], pickerTabs: [PickerTab]? = nil,
+              completion: ((Result<TokenIndex, Error>) -> Void)? = nil) {
+        guard token != nil else {
+            let problem = SemanticError("Connect GitHub before syncing this repository.")
+            if let completion { completion(.failure(problem)) } else { error = problem.localizedDescription; screen = "home" }
+            return
+        }
         task?.cancel(); busy = true; error = nil; status = "Opening selected token files…"
         task = Task {
             do {
-                let index = try await GitHubClient(token: token).index(repo, paths: paths) { message in
+                var index = try await GitHubClient(token: token).index(repo, paths: paths) { message in
                     await MainActor.run { self.status = message }
                 }
                 try Task.checkCancellation()
+                index.pickerTabs = (pickerTabs ?? indices.first(where: { $0.repository.id == repo.id })?.pickerTabs ?? [])
+                    .filter { paths.contains($0.path) }
                 var updated = indices.filter { $0.repository.id != repo.id }; updated.append(index)
                 try persist(updated)
-                indices = updated; select(repo.id); screen = "home"; status = "Loaded \(index.tokens.count) semantic definitions."
-            } catch is CancellationError { status = "Sync canceled. Previous tokens are unchanged." }
-            catch { self.error = error.localizedDescription }
+                indices = updated; select(repo.id)
+                if completion == nil { screen = "home" }
+                status = "Loaded \(index.tokens.count) semantic definitions."
+                completion?(.success(index))
+            } catch is CancellationError {
+                status = "Sync canceled. Previous tokens are unchanged."
+                completion?(.failure(CancellationError()))
+            } catch {
+                if let completion { completion(.failure(error)) } else { self.error = error.localizedDescription }
+            }
             busy = false
         }
     }

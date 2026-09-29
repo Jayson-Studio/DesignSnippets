@@ -74,28 +74,44 @@ import SwiftUI
         precondition(ranked.matches.map(\.name) == ["--text", "--text-body", "--text-h3"])
         ranked.query = ""
         precondition(ranked.matches == ranked.tokens)
-        // Tabs retain the typed query, reset selection, and wrap independently of results.
+        // The default tab keeps existing imports; added tabs display only their chosen file.
         let tabs = PickerState()
         tabs.tokens = TokenParser.parse(#"{"foundations":{"color":{"$value":"red"}},"components":{"button":{"$value":"button"}},"icons":{"check":{"$value":"✓","$type":"icon"}},"getting-started":{"install":{"$value":"setup"}}}"#, source: "tokens.json")
-        precondition(tabs.sections == ["Foundations", "Getting Started", "Components", "Icons"])
-        precondition(tabs.matches.map(\.name) == ["foundations.color"])
+        precondition(tabs.sections == ["Foundations"] && tabs.matches.count == 4)
+        let iconTab = PickerTab(title: "Icons", path: "icons.json")
+        tabs.tabDefinitions = [iconTab]
+        tabs.tokens += TokenParser.parse(#"{"check":{"$value":"✓","$type":"icon"}}"#, source: "icons.json")
+        precondition(tabs.sections == ["Foundations", "Icons"] && tabs.matches.count == 4)
         tabs.query = "check"
         tabs.selected = 8
         tabs.moveSection(-1)
         precondition(tabs.activeSection == "Icons" && tabs.query == "check" && tabs.selected == 0)
-        precondition(tabs.matches.map(\.name) == ["icons.check"])
+        precondition(tabs.matches.map(\.name) == ["check"])
         tabs.moveSection(1)
-        precondition(tabs.activeSection == "Foundations" && tabs.matches.isEmpty)
+        precondition(tabs.activeSection == "Foundations" && tabs.matches.map(\.name) == ["icons.check"])
         tabs.moveSelection(1)
         precondition(tabs.selected == 0)
         tabs.query = ""
-        tabs.selectSection("Getting Started")
-        precondition(tabs.matches.map(\.name) == ["getting-started.install"])
-        tabs.selectSection("Components")
-        precondition(tabs.matches.map(\.name) == ["components.button"])
+        tabs.createTab()
+        precondition(tabs.sections == ["Foundations", "Icons", "New tab"] && tabs.activeSection == "New tab")
+        tabs.cancelTab()
+        precondition(tabs.sections == ["Foundations", "Icons"] && tabs.activeSection == "Foundations")
+        var requestedPath: String?
+        tabs.addTab = { requestedPath = $0 }
+        tabs.createTab()
+        tabs.tabFilePath = "src/components/button-tokens.json"
+        tabs.submitTab()
+        precondition(requestedPath == "src/components/button-tokens.json" && tabs.tabBusy)
+        let componentsTab = PickerTab(title: "Button Tokens", path: requestedPath!)
+        tabs.tabDefinitions.append(componentsTab)
+        tabs.finishTab(componentsTab)
+        precondition(!tabs.creatingTab && tabs.activeSection == "Button Tokens")
+        precondition(PickerTab.title(for: "src/components/button-tokens.json", existing: [iconTab]) == "Button Tokens")
+        precondition(PickerTab.title(for: "other/icons.css", existing: [iconTab]) == "Icons 2")
         // The Preview search field uses this handler for picker navigation and selection.
         let previewKeys = PickerState()
-        previewKeys.tokens = state.tokens
+        previewKeys.tokens = state.tokens + [DesignToken(name: "--icon-check", value: "✓", kind: "Icon", source: "icons.json")]
+        previewKeys.tabDefinitions = [iconTab]
         var previewChoice: String?
         previewKeys.choose = { previewChoice = $0.name }
         precondition(PreviewPickerKeyboard.handle(.downArrow, modifiers: [], state: previewKeys))
@@ -106,9 +122,9 @@ import SwiftUI
         precondition(!PreviewPickerKeyboard.handle(.downArrow, modifiers: [.command], state: previewKeys))
         precondition(previewKeys.selected == 1)
         precondition(PreviewPickerKeyboard.handle(.rightArrow, modifiers: [], state: previewKeys))
-        precondition(previewKeys.activeSection == "Getting Started")
+        precondition(previewKeys.activeSection == "Icons")
         precondition(PreviewPickerKeyboard.handle(.tab, modifiers: [], state: previewKeys))
-        precondition(previewChoice == nil)
+        precondition(previewChoice == "--icon-check")
         precondition(PreviewPickerKeyboard.handle(.leftArrow, modifiers: [], state: previewKeys))
         precondition(previewKeys.activeSection == "Foundations")
         previewKeys.query = "space"
@@ -116,9 +132,10 @@ import SwiftUI
         precondition(previewKeys.query.isEmpty)
         precondition(!PreviewPickerKeyboard.handle("x", modifiers: [], state: previewKeys))
         previewKeys.selected = 2
-        previewKeys.refreshPreviewTokens(TokenParser.parse(":root { --only: 4px; }", source: "theme.css"))
+        let repo = Repository(id: 1, full_name: "test/system", default_branch: "main", private: false)
+        previewKeys.updateIndex(TokenIndex(repository: repo, tokens: TokenParser.parse(":root { --only: 4px; }", source: "theme.css"), syncedAt: Date(), revision: "one"))
         precondition(previewKeys.selected == 0 && previewKeys.matches.map(\.name) == ["--only"])
-        previewKeys.refreshPreviewTokens(TokenParser.parse(".icon-new {}", source: "theme.css"))
+        previewKeys.updateIndex(TokenIndex(repository: repo, tokens: TokenParser.parse(#"{"check":{"$value":"✓","$type":"icon"}}"#, source: "icons.json"), syncedAt: Date(), revision: "two", pickerTabs: [iconTab]))
         precondition(previewKeys.activeSection == "Icons" && previewKeys.selected == 0)
         let cssSections = TokenParser.parse(":root { --icon-size: 16px; } .icon-check {} .button {}", source: "theme.css")
         precondition(cssSections.first { $0.name == "--icon-size" }?.pickerSection == "Foundations")
@@ -128,9 +145,9 @@ import SwiftUI
         precondition(legacy.pickerSection == "Foundations")
         let custom = DesignToken(name: "brand.logo", value: "Logo", kind: "Token", source: "tokens.json", section: "Brand")
         tabs.tokens.append(custom)
-        precondition(tabs.sections.contains("Brand"))
-        tabs.selectSection("Brand")
-        precondition(tabs.matches == [custom])
+        tabs.selectSection("Foundations")
+        precondition(!tabs.sections.contains("Brand"))
+        precondition(tabs.matches.contains(custom))
         precondition(try! JSONDecoder().decode(DesignToken.self, from: JSONEncoder().encode(custom)) == custom)
         let rgbTokens = TokenParser.parse(":root { --carbon-400: rgba(39,39,42,1); --color-primary: var(--carbon-400); --border: 1px solid rgb(39 39 42); --radius: 8px; }", source: "theme.css")
         func subtitle(_ name: String) -> String { TokenPreview.pickerDefinition(rgbTokens.first { $0.name == name }!, tokens: rgbTokens) }

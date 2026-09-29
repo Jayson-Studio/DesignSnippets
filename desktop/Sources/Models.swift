@@ -25,12 +25,30 @@ struct Repository: Codable, Identifiable, Equatable {
     let default_branch: String
     let `private`: Bool
 }
+struct PickerTab: Codable, Identifiable, Equatable {
+    let title: String
+    let path: String
+    var id: String { path }
+
+    static func title(for path: String, existing: [PickerTab]) -> String {
+        let name = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+        let words = name.split(whereSeparator: { $0 == "-" || $0 == "_" || $0 == " " })
+        let title = words.map { $0.capitalized }.joined(separator: " ")
+        let base = title.isEmpty ? "Untitled" : title
+        let used = Set(existing.map { $0.title.lowercased() }).union(["foundations", "new tab"])
+        if !used.contains(base.lowercased()) { return base }
+        var suffix = 2
+        while used.contains("\(base) \(suffix)".lowercased()) { suffix += 1 }
+        return "\(base) \(suffix)"
+    }
+}
 struct TokenIndex: Codable {
     let repository: Repository
     let tokens: [DesignToken]
     let syncedAt: Date
     let revision: String
     var sourceFiles: [String]? = nil
+    var pickerTabs: [PickerTab]? = nil
 }
 struct SemanticError: LocalizedError {
     let message: String

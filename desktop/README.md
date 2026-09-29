@@ -91,10 +91,10 @@ configuration, signing-key backup, notarization, and the release workflow. Until
 public feed is configured, local builds show updates as unavailable. Do not send
 an unconfigured preview as the one-time updater installation.
 
-### Picker sections
+### Picker tabs
 
-The picker places section tabs above the bottom search row. Left/Right wraps between tabs and preserves the query; Up/Down walks the visible entries. Each section change selects its first result. Foundations opens by default. The repository label and keyboard-instruction footer are hidden.
+The picker places tabs above the bottom search row. Left/Right wraps between tabs and preserves the query; Up/Down walks the visible entries. Each tab change selects its first result. Foundations opens by default and contains the project's previously imported files. The repository label and keyboard-instruction footer are hidden.
 
-Foundations, Getting Started, Components, and Icons are always available. Additional sections appear from indexed entries. JSON groups named `foundations`, `getting-started`, `components`, `icons`, `brand`, `pages`, `widgets`, or `elements` supply section metadata. Matching source directory names also identify sections. Otherwise CSS classes go to Components and tokens to Foundations; `.icon-*`/`.ico-*` classes and Icon-typed tokens go to Icons. Icon dimensions such as `--icon-size` remain in Foundations. Previously cached indices remain compatible.
+The plus button beside Foundations opens an empty tab with a repository-relative token-file field. After a valid CSS, SCSS, Sass, Less, or JSON file is loaded from the active GitHub project, its file name becomes the tab name and its definitions appear there. The tab and file path are saved with the project so refreshes and relaunches keep them. Files already imported cannot be added again; the existing file-selection screen can still edit the project's imports. Previously cached indices remain compatible.
 
-Icons use a compact grid; imported glyph values are previewed directly, while other definitions retain their token badges and names. The picker does not download a separate icon library or documentation catalog. Sections without indexed entries display an empty state.
+An Icons tab uses a compact grid; imported glyph values are previewed directly, while other definitions retain their token badges and names. The picker does not download a separate icon library or documentation catalog. Tabs without indexed entries display an empty state.

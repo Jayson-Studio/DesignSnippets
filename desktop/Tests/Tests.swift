@@ -85,7 +85,11 @@ final class MockProtocol: URLProtocol {
         // Old caches without a file selection must still open after upgrading.
         let old = try data(["repository": ["id": 1, "full_name": "test/system", "default_branch": "main", "private": true], "tokens": [], "syncedAt": 0, "revision": "old"])
         let legacy = try JSONDecoder().decode(TokenIndex.self, from: old)
-        try check(legacy.sourceFiles == nil, "Backward-compatible token cache")
+        try check(legacy.sourceFiles == nil && legacy.pickerTabs == nil, "Backward-compatible token cache")
+        var withTab = index
+        withTab.pickerTabs = [PickerTab(title: "Icons", path: "src/icons.json")]
+        let restored = try JSONDecoder().decode(TokenIndex.self, from: JSONEncoder().encode(withTab))
+        try check(restored.pickerTabs == withTab.pickerTabs, "Persist file-backed picker tabs")
         MockProtocol.handler = { _ in (401, Data()) }
         do { let _: GitHubUser = try await client.request("/user"); throw SemanticError("FAIL: expired credentials accepted") }
         catch { try check(error.localizedDescription.contains("expired"), "Actionable expired-session error") }
