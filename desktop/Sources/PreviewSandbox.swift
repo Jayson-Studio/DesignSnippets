@@ -34,12 +34,14 @@ struct PreviewSandbox: View {
             picker.addTab = { [weak picker, weak model] path in
                 guard let picker, let model else { return }
                 model.addPickerTab(path: path) { result in
+                    guard picker.creatingTab else { return }
                     switch result {
                     case .success(let tab): picker.updateIndex(model.activeIndex); picker.finishTab(tab)
                     case .failure(let error): picker.tabBusy = false; picker.tabError = error.localizedDescription
                     }
                 }
             }
+            picker.cancelTabImport = { [weak model] in model?.cancelPickerTabImport() }
         }
         .onReceive(model.$indices) { indices in
             picker.updateIndex(indices.first(where: { $0.repository.id == model.activeID }))

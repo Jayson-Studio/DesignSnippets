@@ -178,6 +178,7 @@ import SwiftUI
         }
     }
     func cancel() { task?.cancel(); deviceCode = nil }
+    func cancelPickerTabImport() { task?.cancel() }
     func disconnect() {
         task?.cancel(); pausePicker()
         token = nil; account = nil; repositories = []; deviceCode = nil

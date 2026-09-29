@@ -38,6 +38,7 @@ enum PickerLayout {
     var addTab: ((String) -> Void)?
     var beginTabEntry: (() -> Void)?
     var endTabEntry: (() -> Void)?
+    var cancelTabImport: (() -> Void)?
     var sections: [String] {
         ["Foundations"] + tabDefinitions.map(\.title) + (creatingTab ? ["New tab"] : [])
     }
@@ -55,6 +56,7 @@ enum PickerLayout {
         endTabEntry?()
     }
     func cancelTab() {
+        if tabBusy { cancelTabImport?() }
         creatingTab = false; tabBusy = false; tabError = nil; tabFilePath = ""
         selectSection("Foundations")
         endTabEntry?()
@@ -90,6 +92,7 @@ enum PickerLayout {
         tokens = index?.tokens ?? []
         tabDefinitions = index?.pickerTabs ?? []
         if creatingTab { selected = 0; return }
+        if !sections.contains(activeSection) { selectSection("Foundations") }
         if matches.isEmpty,
            let section = sections.first(where: { section in
                tokensForSection(section).contains { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
@@ -455,6 +458,7 @@ final class FloatingPanel: NSPanel {
             guard let self else { return }
             self.model.addPickerTab(path: path) { [weak self] result in
                 guard let self else { return }
+                guard self.state.creatingTab else { return }
                 switch result {
                 case .success(let tab): self.state.updateIndex(self.model.activeIndex); self.state.finishTab(tab)
                 case .failure(let error): self.state.tabBusy = false; self.state.tabError = error.localizedDescription
@@ -467,7 +471,12 @@ final class FloatingPanel: NSPanel {
             self.panel?.acceptsInput = true
             self.panel?.makeKeyAndOrderFront(nil)
         }
-        state.endTabEntry = { [weak self] in self?.panel?.acceptsInput = false }
+        state.cancelTabImport = { [weak self] in self?.model.cancelPickerTabImport() }
+        state.endTabEntry = { [weak self] in
+            guard let self else { return }
+            self.dismiss()
+            _ = NSRunningApplication(processIdentifier: self.pid)?.activate(options: [])
+        }
         state.dragHeader = { [weak self] point, began in self?.dragHeader(point, began: began) }
         state.endHeaderDrag = { [weak self] in self?.endHeaderDrag() }
         state.resetPosition = { [weak self] in self?.resetPosition() }
@@ -785,7 +794,8 @@ final class FloatingPanel: NSPanel {
         }
     }
     private func insert(_ token: DesignToken) {
-        guard !IsSecureEventInputEnabled() else { dismiss(); return }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+              !IsSecureEventInputEnabled() else { dismiss(); return }
         if !state.canInsert {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(token.name, forType: .string)
@@ -793,7 +803,6 @@ final class FloatingPanel: NSPanel {
             dismiss()
             return
         }
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { dismiss(); return }
         let trackedCount = PickerEditor.trackedReplacementCount(bundle: ownerBundle, query: state.query,
             hasHash: triggerHasHash, active: trackedSessionValid && copyOnlyFallback && state.manualOnly)
         if trackedCount != nil {
@@ -879,6 +888,7 @@ final class FloatingPanel: NSPanel {
         panel?.acceptsInput = false
         beginTask?.cancel(); beginTask = nil; pendingTrigger = false
         copyOnlyFallback = false; fallbackAnchor = nil; trackedSessionValid = true
+        state.canInsert = true
         state.pointerPosition = false; state.manualPosition = false; state.manualOnly = false
         dragStart = nil; positionDisplay = nil
         placementTask?.cancel(); placementTask = nil

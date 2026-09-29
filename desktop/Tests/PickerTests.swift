@@ -94,8 +94,11 @@ import SwiftUI
         tabs.query = ""
         tabs.createTab()
         precondition(tabs.sections == ["Foundations", "Icons", "New tab"] && tabs.activeSection == "New tab")
+        var importCancelled = false
+        tabs.cancelTabImport = { importCancelled = true }
+        tabs.tabBusy = true
         tabs.cancelTab()
-        precondition(tabs.sections == ["Foundations", "Icons"] && tabs.activeSection == "Foundations")
+        precondition(importCancelled && tabs.sections == ["Foundations", "Icons"] && tabs.activeSection == "Foundations")
         var requestedPath: String?
         tabs.addTab = { requestedPath = $0 }
         tabs.createTab()
@@ -137,6 +140,8 @@ import SwiftUI
         precondition(previewKeys.selected == 0 && previewKeys.matches.map(\.name) == ["--only"])
         previewKeys.updateIndex(TokenIndex(repository: repo, tokens: TokenParser.parse(#"{"check":{"$value":"✓","$type":"icon"}}"#, source: "icons.json"), syncedAt: Date(), revision: "two", pickerTabs: [iconTab]))
         precondition(previewKeys.activeSection == "Icons" && previewKeys.selected == 0)
+        previewKeys.updateIndex(TokenIndex(repository: repo, tokens: [], syncedAt: Date(), revision: "empty"))
+        precondition(previewKeys.activeSection == "Foundations" && previewKeys.sections == ["Foundations"])
         let cache = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("index.json")
         let fileModel = AppModel(preview: true, cacheURL: cache)
         let imported = TokenIndex(repository: repo, tokens: TokenParser.parse(":root { --only: 4px; }", source: "theme.css"),
