@@ -93,6 +93,28 @@ import SwiftUI
         precondition(tabs.matches.map(\.name) == ["getting-started.install"])
         tabs.selectSection("Components")
         precondition(tabs.matches.map(\.name) == ["components.button"])
+        // The Preview search field uses this handler for picker navigation and selection.
+        let previewKeys = PickerState()
+        previewKeys.tokens = state.tokens
+        var previewChoice: String?
+        previewKeys.choose = { previewChoice = $0.name }
+        precondition(PreviewPickerKeyboard.handle(.downArrow, modifiers: [], state: previewKeys))
+        precondition(previewKeys.selected == 1)
+        precondition(PreviewPickerKeyboard.handle(.return, modifiers: [], state: previewKeys))
+        precondition(previewChoice == "--border-focus")
+        previewChoice = nil
+        precondition(!PreviewPickerKeyboard.handle(.downArrow, modifiers: [.command], state: previewKeys))
+        precondition(previewKeys.selected == 1)
+        precondition(PreviewPickerKeyboard.handle(.rightArrow, modifiers: [], state: previewKeys))
+        precondition(previewKeys.activeSection == "Getting Started")
+        precondition(PreviewPickerKeyboard.handle(.tab, modifiers: [], state: previewKeys))
+        precondition(previewChoice == nil)
+        precondition(PreviewPickerKeyboard.handle(.leftArrow, modifiers: [], state: previewKeys))
+        precondition(previewKeys.activeSection == "Foundations")
+        previewKeys.query = "space"
+        precondition(PreviewPickerKeyboard.handle(.escape, modifiers: [], state: previewKeys))
+        precondition(previewKeys.query.isEmpty)
+        precondition(!PreviewPickerKeyboard.handle("x", modifiers: [], state: previewKeys))
         let cssSections = TokenParser.parse(":root { --icon-size: 16px; } .icon-check {} .button {}", source: "theme.css")
         precondition(cssSections.first { $0.name == "--icon-size" }?.pickerSection == "Foundations")
         precondition(cssSections.first { $0.name == ".icon-check" }?.pickerSection == "Icons")

@@ -9,6 +9,23 @@ enum PickerLayout {
     static let size = CGSize(width: width, height: height)
 }
 
+@MainActor enum PreviewPickerKeyboard {
+    @discardableResult static func handle(_ key: KeyEquivalent, modifiers: SwiftUI.EventModifiers, state: PickerState) -> Bool {
+        guard modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return false }
+        switch key {
+        case .leftArrow: state.moveSection(-1)
+        case .rightArrow: state.moveSection(1)
+        case .upArrow: state.moveSelection(-1)
+        case .downArrow: state.moveSelection(1)
+        case .return, .tab:
+            if state.matches.indices.contains(state.selected) { state.choose?(state.matches[state.selected]) }
+        case .escape: state.query = ""
+        default: return false
+        }
+        return true
+    }
+}
+
 @MainActor final class PickerState: ObservableObject {
     @Published var query = ""
     @Published private(set) var activeSection = "Foundations"
@@ -154,18 +171,7 @@ struct PickerView: View {
                         .textFieldStyle(.plain).foregroundStyle(Protegia.text)
                         .onChange(of: state.query) { _, _ in state.selected = 0 }
                         .onKeyPress { press in
-                            guard press.modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return .ignored }
-                            switch press.key {
-                            case .leftArrow: state.moveSection(-1); return .handled
-                            case .rightArrow: state.moveSection(1); return .handled
-                            case .upArrow: state.moveSelection(-1); return .handled
-                            case .downArrow: state.moveSelection(1); return .handled
-                            case .return, .tab:
-                                if state.matches.indices.contains(state.selected) { state.choose?(state.matches[state.selected]) }
-                                return .handled
-                            case .escape: state.query = ""; return .handled
-                            default: return .ignored
-                            }
+                            PreviewPickerKeyboard.handle(press.key, modifiers: press.modifiers, state: state) ? .handled : .ignored
                         }
                 } else {
                     Text(state.query.isEmpty ? "Search for a token" : state.query)
