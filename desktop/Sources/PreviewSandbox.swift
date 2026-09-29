@@ -26,16 +26,16 @@ struct PreviewSandbox: View {
         .padding(8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
-            picker.tokens = model.tokens
+            picker.refreshPreviewTokens(model.tokens)
             picker.choose = { [weak picker] token in
                 guard let picker, let index = picker.matches.firstIndex(of: token) else { return }
                 picker.selected = index
             }
         }
         .onReceive(model.$indices) { indices in
-            picker.tokens = indices.first(where: { $0.repository.id == model.activeID })?.tokens ?? []
+            picker.refreshPreviewTokens(indices.first(where: { $0.repository.id == model.activeID })?.tokens ?? [])
         }
-        .onChange(of: model.activeID) { _, _ in picker.tokens = model.tokens }
+        .onChange(of: model.activeID) { _, _ in picker.refreshPreviewTokens(model.tokens) }
     }
 }
 

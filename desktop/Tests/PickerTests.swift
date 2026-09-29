@@ -115,6 +115,11 @@ import SwiftUI
         precondition(PreviewPickerKeyboard.handle(.escape, modifiers: [], state: previewKeys))
         precondition(previewKeys.query.isEmpty)
         precondition(!PreviewPickerKeyboard.handle("x", modifiers: [], state: previewKeys))
+        previewKeys.selected = 2
+        previewKeys.refreshPreviewTokens(TokenParser.parse(":root { --only: 4px; }", source: "theme.css"))
+        precondition(previewKeys.selected == 0 && previewKeys.matches.map(\.name) == ["--only"])
+        previewKeys.refreshPreviewTokens(TokenParser.parse(".icon-new {}", source: "theme.css"))
+        precondition(previewKeys.activeSection == "Icons" && previewKeys.selected == 0)
         let cssSections = TokenParser.parse(":root { --icon-size: 16px; } .icon-check {} .button {}", source: "theme.css")
         precondition(cssSections.first { $0.name == "--icon-size" }?.pickerSection == "Foundations")
         precondition(cssSections.first { $0.name == ".icon-check" }?.pickerSection == "Icons")

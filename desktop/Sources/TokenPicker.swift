@@ -49,6 +49,16 @@ enum PickerLayout {
     @Published var selectionFromPointer = false
     private var lastPointerPosition: CGPoint?
     @Published var tokens: [DesignToken] = []
+    func refreshPreviewTokens(_ updatedTokens: [DesignToken]) {
+        tokens = updatedTokens
+        if matches.isEmpty,
+           let section = sections.first(where: { section in
+               updatedTokens.contains { $0.pickerSection == section && (query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)) }
+           }) {
+            selectSection(section)
+        }
+        selected = matches.isEmpty ? 0 : min(selected, matches.count - 1)
+    }
     @Published var project = ""
     @Published var canInsert = true
     @Published var approximatePosition = false
