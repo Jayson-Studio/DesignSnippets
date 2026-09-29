@@ -80,6 +80,8 @@ Before a public release, test live login/revocation and insertion in each suppor
 
 The native interface uses **Protegia.sys** from design.protegia.io. The canonical token snapshot and mapping notes are bundled under `Resources/DesignSystem/`; reusable native styles live in `Sources/ProtegiaTheme.swift`. Lato fonts are bundled for offline use, with their license in `Resources/Fonts/OFL.txt`. All native screens and the floating picker share the dark theme. `scripts/render-design.swift` renders isolated UI fixtures without signing in or reading saved workspace data.
 
+The menu bar popover has **Default** and **Preview** tabs. Preview provides a local text editor that opens the production `PickerView` on `#`, using the active project's token index and the same picker state for filtering, sections, and selection. Return or a token click inserts its name into the local editor; Preview never writes into another app.
+
 The project chooser loads `/user/repos` with the signed-in GitHub App token, including every returned page. It shows repository visibility and default branch and refreshes when the app becomes active after opening repository-access settings. GitHub still controls which private repositories the token can see.
 
 ## In-app updates
