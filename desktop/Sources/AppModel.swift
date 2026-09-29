@@ -45,13 +45,14 @@ import SwiftUI
         ("Google Chrome", "com.google.Chrome"), ("Safari", "com.apple.Safari"),
         ("Arc", "company.thebrowser.Browser"), ("TextEdit (for testing)", "com.apple.TextEdit")
     ]
-    init(preview: Bool = false, info: [String: Any] = Bundle.main.infoDictionary ?? [:], defaults: UserDefaults = .standard) {
+    init(preview: Bool = false, info: [String: Any] = Bundle.main.infoDictionary ?? [:],
+         defaults: UserDefaults = .standard, cacheURL: URL? = nil) {
         allowsDeveloperSetup = info["SemanticDeveloperSetupAllowed"] as? Bool ?? false
         clientID = (info["SemanticGitHubClientID"] as? String ?? (allowsDeveloperSetup ? defaults.string(forKey: "githubClientID") : nil) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         appSlug = (info["SemanticGitHubAppSlug"] as? String ?? (allowsDeveloperSetup ? defaults.string(forKey: "githubAppSlug") : nil) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        cacheURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Semantic/token-index.json")
+        self.cacheURL = cacheURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Semantic/token-index.json")
         if preview { return }
-        if let data = try? Data(contentsOf: cacheURL), let saved = try? JSONDecoder().decode([TokenIndex].self, from: data) { indices = saved }
+        if let data = try? Data(contentsOf: self.cacheURL), let saved = try? JSONDecoder().decode([TokenIndex].self, from: data) { indices = saved }
         let saved = UserDefaults.standard.object(forKey: "activeRepository") as? Int
         activeID = indices.first(where: { $0.repository.id == saved })?.repository.id ?? indices.first?.repository.id
         // GitHub credentials live only in memory. Each launch starts signed out.
@@ -119,14 +120,23 @@ import SwiftUI
     }
     func addPickerTab(path rawPath: String, completion: @escaping (Result<PickerTab, Error>) -> Void) {
         guard let index = activeIndex else { completion(.failure(SemanticError("Choose a project before adding a tab."))); return }
-        guard index.repository.id != 0 else { completion(.failure(SemanticError("Connect a GitHub project to add a file-backed tab."))); return }
         guard !busy else { completion(.failure(SemanticError("Wait for the current import to finish."))); return }
         do {
             let path = try GitHubClient.filePaths([rawPath])[0]
             let paths = index.sourceFiles ?? Array(Set(index.tokens.map(\.source))).sorted()
-            guard !paths.contains(path) else { throw SemanticError("This file is already included in the project.") }
             let tabs = index.pickerTabs ?? []
+            guard !tabs.contains(where: { $0.path == path }) else { throw SemanticError("This file already has a tab.") }
             let tab = PickerTab(title: PickerTab.title(for: path, existing: tabs), path: path)
+            if paths.contains(path) {
+                var updatedIndex = index
+                updatedIndex.pickerTabs = tabs + [tab]
+                let updated = indices.map { $0.repository.id == index.repository.id ? updatedIndex : $0 }
+                try persist(updated)
+                indices = updated
+                completion(.success(tab))
+                return
+            }
+            guard index.repository.id != 0 else { throw SemanticError("Connect a GitHub project to add a new token file.") }
             sync(index.repository, paths: paths + [path], pickerTabs: tabs + [tab]) { result in
                 completion(result.map { _ in tab })
             }

@@ -137,6 +137,20 @@ import SwiftUI
         precondition(previewKeys.selected == 0 && previewKeys.matches.map(\.name) == ["--only"])
         previewKeys.updateIndex(TokenIndex(repository: repo, tokens: TokenParser.parse(#"{"check":{"$value":"✓","$type":"icon"}}"#, source: "icons.json"), syncedAt: Date(), revision: "two", pickerTabs: [iconTab]))
         precondition(previewKeys.activeSection == "Icons" && previewKeys.selected == 0)
+        let cache = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("index.json")
+        let fileModel = AppModel(preview: true, cacheURL: cache)
+        let imported = TokenIndex(repository: repo, tokens: TokenParser.parse(":root { --only: 4px; }", source: "theme.css"),
+                                  syncedAt: Date(), revision: "existing", sourceFiles: ["theme.css"])
+        fileModel.indices = [imported]; fileModel.activeID = repo.id
+        var assignedTab: PickerTab?
+        fileModel.addPickerTab(path: "theme.css") { if case .success(let tab) = $0 { assignedTab = tab } }
+        precondition(assignedTab?.title == "Theme" && fileModel.activeIndex?.pickerTabs == [assignedTab!])
+        let cached = try! JSONDecoder().decode([TokenIndex].self, from: Data(contentsOf: cache))
+        precondition(cached.first?.pickerTabs == [assignedTab!])
+        var duplicateFailed = false
+        fileModel.addPickerTab(path: "theme.css") { if case .failure = $0 { duplicateFailed = true } }
+        precondition(duplicateFailed)
+        try? FileManager.default.removeItem(at: cache.deletingLastPathComponent())
         let cssSections = TokenParser.parse(":root { --icon-size: 16px; } .icon-check {} .button {}", source: "theme.css")
         precondition(cssSections.first { $0.name == "--icon-size" }?.pickerSection == "Foundations")
         precondition(cssSections.first { $0.name == ".icon-check" }?.pickerSection == "Icons")
