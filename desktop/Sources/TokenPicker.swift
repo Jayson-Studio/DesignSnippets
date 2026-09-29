@@ -30,12 +30,51 @@ enum PickerLayout {
     @Published var query = ""
     @Published private(set) var activeSection = "Foundations"
     @Published var selected = 0
+    @Published var tabDefinitions: [PickerTab] = []
+    @Published var creatingTab = false
+    @Published var tabFilePath = ""
+    @Published var tabError: String? = nil
+    @Published var tabBusy = false
+    var addTab: ((String) -> Void)?
+    var beginTabEntry: (() -> Void)?
+    var endTabEntry: (() -> Void)?
+    var cancelTabImport: (() -> Void)?
     var sections: [String] {
-        let additional = Set(tokens.map(\.pickerSection)).subtracting(["Foundations", "Getting Started", "Components", "Icons"]).sorted()
-        return ["Foundations", "Getting Started", "Components"] + additional + ["Icons"]
+        ["Foundations"] + tabDefinitions.map(\.title) + (creatingTab ? ["New tab"] : [])
+    }
+    func createTab() {
+        guard !creatingTab else { return }
+        creatingTab = true
+        query = ""
+        tabFilePath = ""; tabError = nil; tabBusy = false
+        selectSection("New tab")
+        beginTabEntry?()
+    }
+    func finishTab(_ tab: PickerTab) {
+        creatingTab = false; tabBusy = false; tabError = nil; tabFilePath = ""
+        if tabDefinitions.contains(tab) { selectSection(tab.title) }
+        endTabEntry?()
+    }
+    func cancelTab() {
+        if tabBusy { cancelTabImport?() }
+        creatingTab = false; tabBusy = false; tabError = nil; tabFilePath = ""
+        selectSection("Foundations")
+        endTabEntry?()
+    }
+    func submitTab() {
+        guard !tabBusy else { return }
+        guard let addTab else { tabError = "This picker cannot load token files."; return }
+        tabError = nil
+        tabBusy = true
+        addTab(tabFilePath)
     }
     func selectSection(_ section: String, pointer: CGPoint? = nil) {
         guard sections.contains(section) else { return }
+        guard !tabBusy || !creatingTab || section == "New tab" else { return }
+        if creatingTab && section != "New tab" {
+            creatingTab = false; tabFilePath = ""; tabError = nil
+            endTabEntry?()
+        }
         activeSection = section
         selected = 0
         selectionFromPointer = false
@@ -49,11 +88,14 @@ enum PickerLayout {
     @Published var selectionFromPointer = false
     private var lastPointerPosition: CGPoint?
     @Published var tokens: [DesignToken] = []
-    func refreshPreviewTokens(_ updatedTokens: [DesignToken]) {
-        tokens = updatedTokens
+    func updateIndex(_ index: TokenIndex?) {
+        tokens = index?.tokens ?? []
+        tabDefinitions = index?.pickerTabs ?? []
+        if creatingTab { selected = 0; return }
+        if !sections.contains(activeSection) { selectSection("Foundations") }
         if matches.isEmpty,
            let section = sections.first(where: { section in
-               updatedTokens.contains { $0.pickerSection == section && (query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)) }
+               tokensForSection(section).contains { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
            }) {
             selectSection(section)
         }
@@ -94,8 +136,16 @@ enum PickerLayout {
         selected = index
     }
     func deleteQueryCharacter() { if !query.isEmpty { query.removeLast() }; selected = 0 }
+    private func tokensForSection(_ section: String) -> [DesignToken] {
+        if section == "Foundations" {
+            let assigned = Set(tabDefinitions.map(\.path))
+            return tokens.filter { !assigned.contains($0.source) }
+        }
+        guard let path = tabDefinitions.first(where: { $0.title == section })?.path else { return [] }
+        return tokens.filter { $0.source == path }
+    }
     var matches: [DesignToken] {
-        let candidates = tokens.filter { $0.pickerSection == activeSection }
+        let candidates = tokensForSection(activeSection)
         guard !query.isEmpty else { return candidates }
         func normalized(_ name: String) -> String {
             var value = name.lowercased()
@@ -119,6 +169,7 @@ struct PickerView: View {
     @ObservedObject var state: PickerState
     var allowsDragging = true
     var editableSearch = false
+    @FocusState private var tabPathFocused: Bool
     var body: some View {
         let matches = state.matches
         VStack(spacing: 0) {
@@ -127,7 +178,31 @@ struct PickerView: View {
                 .overlay { if allowsDragging { PickerDragHeader(state: state) } }
             ScrollViewReader { proxy in
                 ScrollView {
-                    if matches.isEmpty {
+                    if state.creatingTab && state.activeSection == "New tab" {
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("Add a tab").font(Protegia.font(16, bold: true))
+                            Text("Enter a token file in your active GitHub project. The file name becomes the tab name.")
+                                .font(Protegia.font(11)).foregroundStyle(Protegia.secondary)
+                            TextField("src/tokens/icons.json", text: $state.tabFilePath)
+                                .textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
+                                .padding(11).background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
+                                .focused($tabPathFocused).onSubmit { state.submitTab() }
+                                .onKeyPress(.escape) { state.cancelTab(); return .handled }
+                                .accessibilityLabel("Tab token file path")
+                            if let error = state.tabError {
+                                Text(error).font(Protegia.font(11)).foregroundStyle(Protegia.destructive)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            HStack {
+                                Button("Cancel") { state.cancelTab() }.buttonStyle(.plain)
+                                    .foregroundStyle(Protegia.secondary)
+                                Spacer()
+                                Button(state.tabBusy ? "Loading…" : "Add file") { state.submitTab() }
+                                    .buttonStyle(.plain).foregroundStyle(Protegia.accent)
+                                    .disabled(state.tabBusy || state.tabFilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            }.font(Protegia.font(11, bold: true))
+                        }.padding(22).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    } else if matches.isEmpty {
                         VStack(spacing: 6) {
                             Text(state.query.isEmpty ? "No entries in \(state.activeSection)" : "No matching entries")
                                 .font(Protegia.font(12, bold: true))
@@ -168,30 +243,43 @@ struct PickerView: View {
                                     .background(state.activeSection == section ? Protegia.level2 : .clear, in: Capsule())
                             }.buttonStyle(.plain).id(section)
                                 .accessibilityAddTraits(state.activeSection == section ? .isSelected : [])
+                            if section == "Foundations" {
+                                Button { state.createTab() } label: {
+                                    Image(systemName: "plus").font(Protegia.font(12, bold: true))
+                                        .frame(width: 30, height: 30)
+                                }.buttonStyle(.plain).accessibilityLabel("Add tab")
+                                    .disabled(state.tabBusy)
+                            }
                         }
                     }.padding(.horizontal, 14).padding(.vertical, 10)
                 }.onChange(of: state.activeSection) { _, section in proxy.scrollTo(section, anchor: .center) }
             }
-            ProtegiaDivider().padding(.horizontal, 14)
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(Protegia.tertiary)
-                if editableSearch {
-                    TextField("", text: $state.query,
-                              prompt: Text("Search for a token").foregroundColor(Protegia.tertiary))
-                        .textFieldStyle(.plain).foregroundStyle(Protegia.text)
-                        .onChange(of: state.query) { _, _ in state.selected = 0 }
-                        .onKeyPress { press in
-                            PreviewPickerKeyboard.handle(press.key, modifiers: press.modifiers, state: state) ? .handled : .ignored
-                        }
-                } else {
-                    Text(state.query.isEmpty ? "Search for a token" : state.query)
-                        .foregroundStyle(state.query.isEmpty ? Protegia.tertiary : Protegia.text).lineLimit(1)
-                }
-                Spacer()
-                Text("esc").font(Protegia.font(11)).foregroundStyle(Protegia.tertiary)
-            }.padding(14).overlay { if allowsDragging { PickerDragHeader(state: state) } }
+            if !(state.creatingTab && state.activeSection == "New tab") {
+                ProtegiaDivider().padding(.horizontal, 14)
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(Protegia.tertiary)
+                    if editableSearch {
+                        TextField("", text: $state.query,
+                                  prompt: Text("Search for a token").foregroundColor(Protegia.tertiary))
+                            .textFieldStyle(.plain).foregroundStyle(Protegia.text)
+                            .onChange(of: state.query) { _, _ in state.selected = 0 }
+                            .onKeyPress { press in
+                                PreviewPickerKeyboard.handle(press.key, modifiers: press.modifiers, state: state) ? .handled : .ignored
+                            }
+                    } else {
+                        Text(state.query.isEmpty ? "Search for a token" : state.query)
+                            .foregroundStyle(state.query.isEmpty ? Protegia.tertiary : Protegia.text).lineLimit(1)
+                    }
+                    Spacer()
+                    Text("esc").font(Protegia.font(11)).foregroundStyle(Protegia.tertiary)
+                }.padding(14).overlay { if allowsDragging { PickerDragHeader(state: state) } }
+            }
         }.frame(width: PickerLayout.width, height: PickerLayout.height).background(Protegia.base)
         .foregroundStyle(Protegia.text).font(Protegia.font(12)).tint(Protegia.accent).preferredColorScheme(.dark)
+        .onChange(of: state.creatingTab) { _, creating in
+            if creating { DispatchQueue.main.async { tabPathFocused = true } }
+            else { tabPathFocused = false }
+        }
     }
 
     private func entry(_ token: DesignToken, index: Int, grid: Bool) -> some View {
@@ -332,7 +420,8 @@ enum PickerEditor {
 }
 
 final class FloatingPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
+    var acceptsInput = false
+    override var canBecomeKey: Bool { acceptsInput }
     override var canBecomeMain: Bool { false }
 }
 
@@ -365,11 +454,34 @@ final class FloatingPanel: NSPanel {
     init(model: AppModel) {
         self.model = model
         state.choose = { [weak self] in self?.insert($0) }
+        state.addTab = { [weak self] path in
+            guard let self else { return }
+            self.model.addPickerTab(path: path) { [weak self] result in
+                guard let self else { return }
+                guard self.state.creatingTab else { return }
+                switch result {
+                case .success(let tab): self.state.updateIndex(self.model.activeIndex); self.state.finishTab(tab)
+                case .failure(let error): self.state.tabBusy = false; self.state.tabError = error.localizedDescription
+                }
+            }
+        }
+        state.beginTabEntry = { [weak self] in
+            guard let self else { return }
+            self.state.canInsert = false
+            self.panel?.acceptsInput = true
+            self.panel?.makeKeyAndOrderFront(nil)
+        }
+        state.cancelTabImport = { [weak self] in self?.model.cancelPickerTabImport() }
+        state.endTabEntry = { [weak self] in
+            guard let self else { return }
+            self.dismiss()
+            _ = NSRunningApplication(processIdentifier: self.pid)?.activate(options: [])
+        }
         state.dragHeader = { [weak self] point, began in self?.dragHeader(point, began: began) }
         state.endHeaderDrag = { [weak self] in self?.endHeaderDrag() }
         state.resetPosition = { [weak self] in self?.resetPosition() }
         notification = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.dismiss() }
+            MainActor.assumeIsolated { if self?.state.creatingTab != true { self?.dismiss() } }
         }
     }
     func start() {
@@ -476,6 +588,7 @@ final class FloatingPanel: NSPanel {
             if let panel, panel.isVisible, !panel.frame.contains(NSEvent.mouseLocation) { dismiss() }
             return false
         }
+        if state.creatingTab { return false }
         guard type == .keyDown, let front = NSWorkspace.shared.frontmostApplication,
               let bundle = front.bundleIdentifier, model.allowsPicker(in: bundle), front.processIdentifier != ProcessInfo.processInfo.processIdentifier,
               !model.tokens.isEmpty else { dismiss(); return false }
@@ -549,7 +662,7 @@ final class FloatingPanel: NSPanel {
         state.manualOnly = PickerEditor.usesManualPosition(bundle: ownerBundle)
         // Preserve the last click in this app even when the pointer moves while typing.
         fallbackPoint = lastClick?.pid == pid ? lastClick!.point : NSEvent.mouseLocation
-        state.tokens = model.tokens; state.selectSection("Foundations", pointer: NSEvent.mouseLocation); state.project = model.activeIndex?.repository.full_name ?? ""; state.selected = 0
+        state.updateIndex(model.activeIndex); state.selectSection("Foundations", pointer: NSEvent.mouseLocation); state.project = model.activeIndex?.repository.full_name ?? ""; state.selected = 0
         // AX requests from inside the event-tap callback can block delivery to the editor.
         // Resolve focus after delivery, with retries for lazily-created accessibility trees.
         beginTask = Task { [weak self] in
@@ -580,7 +693,7 @@ final class FloatingPanel: NSPanel {
                 self.state.canInsert = start != nil
                 self.state.approximatePosition = false
                 self.target = element; self.pendingTrigger = false
-                self.state.tokens = index.tokens; self.state.project = index.repository.full_name
+                self.state.updateIndex(index); self.state.project = index.repository.full_name
                 self.model.pickerFeedback = nil
                 self.showPicker()
                 return
@@ -607,7 +720,7 @@ final class FloatingPanel: NSPanel {
 
             }
         }
-        state.tokens = index.tokens; state.project = index.repository.full_name
+        state.updateIndex(index); state.project = index.repository.full_name
         model.pickerFeedback = state.canInsert ? nil : "This editor uses copy mode. Select a token, then replace your # search text by pasting it."
         showPicker()
     }
@@ -771,8 +884,11 @@ final class FloatingPanel: NSPanel {
         schedulePlacement()
     }
     func dismiss() {
+        if state.creatingTab { state.cancelTab() }
+        panel?.acceptsInput = false
         beginTask?.cancel(); beginTask = nil; pendingTrigger = false
         copyOnlyFallback = false; fallbackAnchor = nil; trackedSessionValid = true
+        state.canInsert = true
         state.pointerPosition = false; state.manualPosition = false; state.manualOnly = false
         dragStart = nil; positionDisplay = nil
         placementTask?.cancel(); placementTask = nil

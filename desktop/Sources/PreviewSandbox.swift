@@ -26,16 +26,27 @@ struct PreviewSandbox: View {
         .padding(8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
-            picker.refreshPreviewTokens(model.tokens)
+            picker.updateIndex(model.activeIndex)
             picker.choose = { [weak picker] token in
                 guard let picker, let index = picker.matches.firstIndex(of: token) else { return }
                 picker.selected = index
             }
+            picker.addTab = { [weak picker, weak model] path in
+                guard let picker, let model else { return }
+                model.addPickerTab(path: path) { result in
+                    guard picker.creatingTab else { return }
+                    switch result {
+                    case .success(let tab): picker.updateIndex(model.activeIndex); picker.finishTab(tab)
+                    case .failure(let error): picker.tabBusy = false; picker.tabError = error.localizedDescription
+                    }
+                }
+            }
+            picker.cancelTabImport = { [weak model] in model?.cancelPickerTabImport() }
         }
         .onReceive(model.$indices) { indices in
-            picker.refreshPreviewTokens(indices.first(where: { $0.repository.id == model.activeID })?.tokens ?? [])
+            picker.updateIndex(indices.first(where: { $0.repository.id == model.activeID }))
         }
-        .onChange(of: model.activeID) { _, _ in picker.refreshPreviewTokens(model.tokens) }
+        .onChange(of: model.activeID) { _, _ in picker.updateIndex(model.activeIndex) }
     }
 }
 
