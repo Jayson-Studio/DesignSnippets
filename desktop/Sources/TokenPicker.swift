@@ -91,6 +91,7 @@ enum PickerLayout {
 struct PickerView: View {
     @ObservedObject var state: PickerState
     var allowsDragging = true
+    var editableSearch = false
     var body: some View {
         let matches = state.matches
         VStack(spacing: 0) {
@@ -147,8 +148,29 @@ struct PickerView: View {
             ProtegiaDivider().padding(.horizontal, 14)
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(Protegia.tertiary)
-                Text(state.query.isEmpty ? "Search for a token" : state.query)
-                    .foregroundStyle(state.query.isEmpty ? Protegia.tertiary : Protegia.text).lineLimit(1)
+                if editableSearch {
+                    TextField("", text: $state.query,
+                              prompt: Text("Search for a token").foregroundColor(Protegia.tertiary))
+                        .textFieldStyle(.plain).foregroundStyle(Protegia.text)
+                        .onChange(of: state.query) { _, _ in state.selected = 0 }
+                        .onKeyPress { press in
+                            guard press.modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return .ignored }
+                            switch press.key {
+                            case .leftArrow: state.moveSection(-1); return .handled
+                            case .rightArrow: state.moveSection(1); return .handled
+                            case .upArrow: state.moveSelection(-1); return .handled
+                            case .downArrow: state.moveSelection(1); return .handled
+                            case .return, .tab:
+                                if state.matches.indices.contains(state.selected) { state.choose?(state.matches[state.selected]) }
+                                return .handled
+                            case .escape: state.query = ""; return .handled
+                            default: return .ignored
+                            }
+                        }
+                } else {
+                    Text(state.query.isEmpty ? "Search for a token" : state.query)
+                        .foregroundStyle(state.query.isEmpty ? Protegia.tertiary : Protegia.text).lineLimit(1)
+                }
                 Spacer()
                 Text("esc").font(Protegia.font(11)).foregroundStyle(Protegia.tertiary)
             }.padding(14).overlay { if allowsDragging { PickerDragHeader(state: state) } }

@@ -4,9 +4,17 @@ import AppKit
 let semanticGreen = Protegia.accent
 struct SemanticPanel: View {
     @ObservedObject var model: AppModel
-    var appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development"
+    var appVersion: String
+    var onTabChange: ((String) -> Void)?
     @State private var search = ""
-    @State private var selectedTab = "Default"
+    @State private var selectedTab: String
+    init(model: AppModel, appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development",
+         initialTab: String = "Default", onTabChange: ((String) -> Void)? = nil) {
+        self.model = model
+        self.appVersion = appVersion
+        self.onTabChange = onTabChange
+        _selectedTab = State(initialValue: initialTab)
+    }
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 9) {
@@ -57,15 +65,18 @@ struct SemanticPanel: View {
                     if let error = model.error { Text(error).font(Protegia.font(12)).foregroundStyle(Protegia.destructive).textSelection(.enabled).padding(11).frame(maxWidth: .infinity, alignment: .leading).background(Protegia.destructive.opacity(0.10), in: RoundedRectangle(cornerRadius: 8)) }
                 }.padding(Protegia.spaceLG)
             } }
-            ProtegiaDivider()
-            HStack {
-                Circle().fill(model.pickerEnabled ? Protegia.accent : Protegia.tertiary).frame(width: 5, height: 5)
-                Text(model.pickerEnabled ? "# picker is on" : "# picker is off").font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
-                Spacer()
-                Button("Preferences…") { model.screen = "preferences" }.buttonStyle(.plain).font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
-            }.padding(.horizontal, Protegia.spaceLG).padding(.vertical, 13)
-        }.frame(width: 420, height: 620).background(Protegia.base)
+            if selectedTab == "Default" {
+                ProtegiaDivider()
+                HStack {
+                    Circle().fill(model.pickerEnabled ? Protegia.accent : Protegia.tertiary).frame(width: 5, height: 5)
+                    Text(model.pickerEnabled ? "# picker is on" : "# picker is off").font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
+                    Spacer()
+                    Button("Preferences…") { model.screen = "preferences" }.buttonStyle(.plain).font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
+                }.padding(.horizontal, Protegia.spaceLG).padding(.vertical, 13)
+            }
+        }.frame(width: 420, height: selectedTab == "Preview" ? 480 : 620).background(Protegia.base)
         .foregroundStyle(Protegia.text).font(Protegia.font(14)).tint(Protegia.accent).preferredColorScheme(.dark)
+        .onChange(of: selectedTab) { _, tab in onTabChange?(tab) }
         .onChange(of: model.screen) { _, screen in
             search = ""
             if screen != "home" { selectedTab = "Default" }
