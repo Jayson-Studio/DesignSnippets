@@ -25,7 +25,9 @@ import SwiftUI
         }
         popover = NSPopover(); popover.behavior = .transient; popover.animates = false
         popover.contentSize = NSSize(width: 420, height: 620)
-        popover.contentViewController = NSHostingController(rootView: SemanticPanel(model: model))
+        popover.contentViewController = NSHostingController(rootView: SemanticPanel(model: model) { [weak self] tab in
+            self?.popover.contentSize = NSSize(width: 420, height: tab == "Preview" ? 480 : 620)
+        })
         updater = AppUpdater(model: model) { [weak self] in self?.popover.performClose(nil) }
         model.reconcilePicker()
         toggle()

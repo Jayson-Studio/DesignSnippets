@@ -14,7 +14,8 @@ import CoreText
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         func render<V: View>(_ view: V, name: String, mutate: (() -> Void)? = nil) throws {
             let host = NSHostingView(rootView: view)
-            let size = name.hasPrefix("token-picker") ? NSSize(width: PickerLayout.width, height: PickerLayout.height) : NSSize(width: 420, height: 620)
+            let size = name.hasPrefix("token-picker") ? NSSize(width: PickerLayout.width, height: PickerLayout.height)
+                : NSSize(width: 420, height: name == "preview-menu" ? 480 : 620)
             host.frame = NSRect(origin: .zero, size: size)
             let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             window.appearance = NSAppearance(named: .darkAqua)
@@ -45,6 +46,16 @@ import CoreText
         model.account = nil
         model.screen = "preferences"
         try render(SemanticPanel(model: model), name: "preferences")
+        let previewModel = AppModel(preview: true)
+        let previewRepo = Repository(id: 42, full_name: "Example / DesignSnippets", default_branch: "main", private: false)
+        let previewTokens = [
+            DesignToken(name: "--icon-cui-dot-cycle", value: "8px", kind: "Dimension", source: "theme.css"),
+            DesignToken(name: "--icon-cui-select-in", value: "200ms", kind: "Dimension", source: "theme.css"),
+            DesignToken(name: "--icon-cui-select-out", value: "150ms", kind: "Dimension", source: "theme.css")
+        ]
+        previewModel.indices = [TokenIndex(repository: previewRepo, tokens: previewTokens, syncedAt: Date(), revision: "fixture")]
+        previewModel.activeID = previewRepo.id
+        try render(SemanticPanel(model: previewModel, appVersion: "0.3.13", initialTab: "Preview"), name: "preview-menu")
         let picker = PickerState()
         picker.project = "Protegia / design system"
         picker.query = ""

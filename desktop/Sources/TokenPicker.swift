@@ -9,6 +9,23 @@ enum PickerLayout {
     static let size = CGSize(width: width, height: height)
 }
 
+@MainActor enum PreviewPickerKeyboard {
+    @discardableResult static func handle(_ key: KeyEquivalent, modifiers: SwiftUI.EventModifiers, state: PickerState) -> Bool {
+        guard modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return false }
+        switch key {
+        case .leftArrow: state.moveSection(-1)
+        case .rightArrow: state.moveSection(1)
+        case .upArrow: state.moveSelection(-1)
+        case .downArrow: state.moveSelection(1)
+        case .return, .tab:
+            if state.matches.indices.contains(state.selected) { state.choose?(state.matches[state.selected]) }
+        case .escape: state.query = ""
+        default: return false
+        }
+        return true
+    }
+}
+
 @MainActor final class PickerState: ObservableObject {
     @Published var query = ""
     @Published private(set) var activeSection = "Foundations"
@@ -32,6 +49,16 @@ enum PickerLayout {
     @Published var selectionFromPointer = false
     private var lastPointerPosition: CGPoint?
     @Published var tokens: [DesignToken] = []
+    func refreshPreviewTokens(_ updatedTokens: [DesignToken]) {
+        tokens = updatedTokens
+        if matches.isEmpty,
+           let section = sections.first(where: { section in
+               updatedTokens.contains { $0.pickerSection == section && (query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)) }
+           }) {
+            selectSection(section)
+        }
+        selected = matches.isEmpty ? 0 : min(selected, matches.count - 1)
+    }
     @Published var project = ""
     @Published var canInsert = true
     @Published var approximatePosition = false
@@ -91,6 +118,7 @@ enum PickerLayout {
 struct PickerView: View {
     @ObservedObject var state: PickerState
     var allowsDragging = true
+    var editableSearch = false
     var body: some View {
         let matches = state.matches
         VStack(spacing: 0) {
@@ -147,8 +175,18 @@ struct PickerView: View {
             ProtegiaDivider().padding(.horizontal, 14)
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(Protegia.tertiary)
-                Text(state.query.isEmpty ? "Search for a token" : state.query)
-                    .foregroundStyle(state.query.isEmpty ? Protegia.tertiary : Protegia.text).lineLimit(1)
+                if editableSearch {
+                    TextField("", text: $state.query,
+                              prompt: Text("Search for a token").foregroundColor(Protegia.tertiary))
+                        .textFieldStyle(.plain).foregroundStyle(Protegia.text)
+                        .onChange(of: state.query) { _, _ in state.selected = 0 }
+                        .onKeyPress { press in
+                            PreviewPickerKeyboard.handle(press.key, modifiers: press.modifiers, state: state) ? .handled : .ignored
+                        }
+                } else {
+                    Text(state.query.isEmpty ? "Search for a token" : state.query)
+                        .foregroundStyle(state.query.isEmpty ? Protegia.tertiary : Protegia.text).lineLimit(1)
+                }
                 Spacer()
                 Text("esc").font(Protegia.font(11)).foregroundStyle(Protegia.tertiary)
             }.padding(14).overlay { if allowsDragging { PickerDragHeader(state: state) } }
