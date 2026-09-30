@@ -27,7 +27,9 @@ import SwiftUI
         // The status item remains the explicit control for opening and closing it.
         popover = NSPopover(); popover.behavior = .applicationDefined; popover.animates = false
         popover.contentSize = NSSize(width: 420, height: 620)
-        popover.contentViewController = NSHostingController(rootView: SemanticPanel(model: model) { [weak self] tab in
+        popover.contentViewController = NSHostingController(rootView: SemanticPanel(model: model, onDismiss: { [weak self] in
+            self?.popover.performClose(nil)
+        }) { [weak self] tab in
             self?.popover.contentSize = NSSize(width: 420, height: tab == "Preview" ? 480 : 620)
         })
         updater = AppUpdater(model: model) { [weak self] in self?.popover.performClose(nil) }

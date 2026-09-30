@@ -291,8 +291,11 @@ struct PickerView: View {
                     }.padding(.horizontal, 14).padding(.vertical, 10)
                 }.onChange(of: state.activeSection) { _, section in
                     proxy.scrollTo(section == "New tab" ? "add-tab" : section, anchor: .trailing)
-                }.onChange(of: state.tabDefinitions.count) { _, _ in
-                    proxy.scrollTo("add-tab", anchor: .trailing)
+                }.onChange(of: state.tabTitle) { _, _ in
+                    if state.creatingTab { proxy.scrollTo("add-tab", anchor: .trailing) }
+                }.onChange(of: state.tabDefinitions.count) { oldCount, newCount in
+                    let addedSelectedTab = newCount > oldCount && state.tabDefinitions.last?.title == state.activeSection
+                    proxy.scrollTo(state.creatingTab || addedSelectedTab ? "add-tab" : state.activeSection, anchor: .trailing)
                 }
             }
             ProtegiaDivider().padding(.horizontal, 14)
