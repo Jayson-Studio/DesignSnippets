@@ -94,6 +94,9 @@ import SwiftUI
         // reliable than activating the accessory app, which can move focus to a
         // different display and make AppKit reposition the popover.
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        // Popovers use a panel window, which otherwise hides when this accessory app
+        // loses focus to a capture tool even when the popover itself stays open.
+        popover.contentViewController?.view.window?.hidesOnDeactivate = false
     }
     @objc private func checkForUpdates() { model.checkForUpdates?() }
     @objc private func quit() { NSApp.terminate(nil) }
