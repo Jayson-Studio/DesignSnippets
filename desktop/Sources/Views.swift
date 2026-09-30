@@ -93,6 +93,17 @@ struct SemanticPanel: View {
                     }
                     HStack { Text("\(index.tokens.count) definitions · \(index.repository.id == 0 ? "Sample tokens" : index.repository.default_branch)"); Spacer(); if index.repository.id != 0 { Button { model.refreshTokens(index.repository) } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).disabled(model.busy) } }.font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
                 }.padding(13).background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.cardRadius))
+                if model.needsColorRefresh {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Color previews need an updated token cache.")
+                            .font(Protegia.font(11, bold: true))
+                        Button(model.account == nil ? "Connect GitHub to update colors" : "Refresh color previews") {
+                            if model.account == nil { model.connectGitHub() }
+                            else { model.refreshTokens(index.repository) }
+                        }
+                        .buttonStyle(.plain).font(Protegia.font(11)).foregroundStyle(semanticGreen).disabled(model.busy)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
                 if index.repository.id != 0 {
                     Button { model.chooseFiles(index.repository) } label: { Label("Edit token files", systemImage: "doc.text") }.buttonStyle(.plain).font(Protegia.font(12)).foregroundStyle(Protegia.secondary).disabled(model.busy)
                 }

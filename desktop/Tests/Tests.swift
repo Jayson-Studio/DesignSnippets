@@ -81,6 +81,7 @@ final class MockProtocol: URLProtocol {
         }
         let semanticIndex = try await client.index(repos[0], paths: ["src/styles/theme.css"], progress: { _ in })
         try check(semanticIndex.tokens.count == 1 && semanticIndex.referenceTokens?.first?.value == "#ec5a72"
+                  && semanticIndex.colorReferencesScanned == true
                   && semanticIndex.sourceFiles == ["src/styles/theme.css"], "Resolve adjacent scales without exposing them as picker entries")
         MockProtocol.handler = { request in
             let path = request.url!.path
@@ -137,7 +138,8 @@ final class MockProtocol: URLProtocol {
         // Old caches without a file selection must still open after upgrading.
         let old = try data(["repository": ["id": 1, "full_name": "test/system", "default_branch": "main", "private": true], "tokens": [], "syncedAt": 0, "revision": "old"])
         let legacy = try JSONDecoder().decode(TokenIndex.self, from: old)
-        try check(legacy.sourceFiles == nil && legacy.pickerTabs == nil, "Backward-compatible token cache")
+        try check(legacy.sourceFiles == nil && legacy.pickerTabs == nil && legacy.colorReferencesScanned == nil,
+                  "Backward-compatible token cache")
         var withTab = index
         withTab.pickerTabs = [PickerTab(title: "Icons", path: "src/icons.json")]
         let restored = try JSONDecoder().decode(TokenIndex.self, from: JSONEncoder().encode(withTab))

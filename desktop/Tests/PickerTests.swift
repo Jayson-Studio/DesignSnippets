@@ -20,6 +20,15 @@ import SwiftUI
         // Command-line defaults supply enable intent without writing user preferences.
         let model = AppModel(preview: true)
         precondition(model.pickerRequested && model.allApps)
+        let cachedModel = AppModel(preview: true)
+        let cachedRepo = Repository(id: 43, full_name: "example/colors", default_branch: "main", private: false)
+        let cachedColor = DesignToken(name: "--color-danger", value: "var(--red-10)", kind: "Color", source: "theme.css")
+        var oldIndex = TokenIndex(repository: cachedRepo, tokens: [cachedColor], syncedAt: Date(), revision: "old", sourceFiles: ["theme.css"])
+        cachedModel.indices = [oldIndex]; cachedModel.activeID = cachedRepo.id
+        precondition(cachedModel.needsColorRefresh)
+        oldIndex.colorReferencesScanned = true
+        cachedModel.indices = [oldIndex]
+        precondition(!cachedModel.needsColorRefresh)
         precondition(model.allowsPicker(in: "example.unlisted-editor"))
         var allowed = false
         var starts = 0

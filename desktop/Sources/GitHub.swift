@@ -190,7 +190,8 @@ struct GitHubClient {
             references += localReferences
         }
         return TokenIndex(repository: repo, tokens: selected, syncedAt: Date(), revision: commit.sha,
-                          sourceFiles: paths, referenceTokens: references.isEmpty ? nil : TokenParser.unique(references))
+                          sourceFiles: paths, referenceTokens: references.isEmpty ? nil : TokenParser.unique(references),
+                          colorReferencesScanned: true)
     }
 
     private static func missingColorReferences(in tokens: [DesignToken]) -> Set<String> {

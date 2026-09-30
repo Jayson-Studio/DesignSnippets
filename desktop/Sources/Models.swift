@@ -50,6 +50,7 @@ struct TokenIndex: Codable {
     var sourceFiles: [String]? = nil
     var pickerTabs: [PickerTab]? = nil
     var referenceTokens: [DesignToken]? = nil
+    var colorReferencesScanned: Bool? = nil
 }
 struct SemanticError: LocalizedError {
     let message: String

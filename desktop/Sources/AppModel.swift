@@ -40,6 +40,10 @@ import SwiftUI
     var activeIndex: TokenIndex? { indices.first { $0.repository.id == activeID } }
     var tokens: [DesignToken] { activeIndex?.tokens ?? [] }
     var resolutionTokens: [DesignToken] { tokens + (activeIndex?.referenceTokens ?? []) }
+    var needsColorRefresh: Bool {
+        guard let index = activeIndex, index.repository.id != 0, index.colorReferencesScanned != true else { return false }
+        return index.tokens.contains { $0.kind.lowercased() == "color" && $0.value.contains("var(") }
+    }
     let supportedApps: [(name: String, id: String)] = [
         ("ChatGPT", "com.openai.chat"), ("Codex", "com.openai.codex"), ("Claude", "com.anthropic.claudefordesktop"),
         ("Cursor", "com.todesktop.230313mzl4w4u92"), ("Visual Studio Code", "com.microsoft.VSCode"),
@@ -86,6 +90,15 @@ import SwiftUI
                 try Task.checkCancellation()
                 token = accessToken; deviceCode = nil
                 try await loadRepositories()
+                if needsColorRefresh {
+                    do { try await refreshCachedColors() }
+                    catch is CancellationError { throw CancellationError() }
+                    catch {
+                        self.error = "Could not refresh cached color previews. \(error.localizedDescription)"
+                        status = "Cached definitions are unchanged."
+                        screen = "home"
+                    }
+                }
             } catch is CancellationError { }
             catch { self.error = error.localizedDescription }
             busy = false; deviceCode = nil
@@ -98,6 +111,22 @@ import SwiftUI
         let repos = try await client.repositories()
         try Task.checkCancellation()
         account = user.login; repositories = repos; status = ""; screen = "projects"
+    }
+    private func refreshCachedColors() async throws {
+        guard let old = activeIndex, let accessToken = token else { return }
+        let paths = old.sourceFiles ?? Array(Set(old.tokens.map(\.source))).sorted()
+        guard !paths.isEmpty else { throw SemanticError("Choose the project's token files and refresh them.") }
+        status = "Updating cached color previews…"
+        var updated = try await GitHubClient(token: accessToken).index(old.repository, paths: paths) { message in
+            await MainActor.run { self.status = message }
+        }
+        try Task.checkCancellation()
+        updated.pickerTabs = (old.pickerTabs ?? []).filter { paths.contains($0.path) }
+        let saved = indices.map { $0.repository.id == old.repository.id ? updated : $0 }
+        try persist(saved)
+        indices = saved
+        status = "Updated color previews for \(old.repository.full_name)."
+        screen = "home"
     }
     func refreshRepositories() {
         task?.cancel(); busy = true; error = nil
