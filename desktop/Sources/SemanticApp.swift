@@ -1,12 +1,13 @@
 import AppKit
 import SwiftUI
 
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var model: AppModel!
     private var picker: TokenPicker!
     private var updater: AppUpdater?
+    private var allowingPopoverClose = false
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         installMainMenu()
@@ -26,13 +27,14 @@ import SwiftUI
         // Keep the menu visible while another app, including a screen capture tool, takes focus.
         // The status item remains the explicit control for opening and closing it.
         popover = NSPopover(); popover.behavior = .applicationDefined; popover.animates = false
+        popover.delegate = self
         popover.contentSize = NSSize(width: 420, height: 620)
         popover.contentViewController = NSHostingController(rootView: SemanticPanel(model: model, onDismiss: { [weak self] in
-            self?.popover.performClose(nil)
+            self?.closePanel()
         }) { [weak self] tab in
             self?.popover.contentSize = NSSize(width: 420, height: tab == "Preview" ? 480 : 620)
         })
-        updater = AppUpdater(model: model) { [weak self] in self?.popover.performClose(nil) }
+        updater = AppUpdater(model: model) { [weak self] in self?.closePanel() }
         model.reconcilePicker()
         toggle()
     }
@@ -75,8 +77,15 @@ import SwiftUI
             statusItem.menu = menu; statusItem.button?.performClick(nil); statusItem.menu = nil
             return
         }
-        if popover.isShown { popover.performClose(nil) } else { showPanel() }
+        if popover.isShown { closePanel() } else { showPanel() }
     }
+    private func closePanel() {
+        guard popover.isShown else { return }
+        allowingPopoverClose = true
+        popover.performClose(nil)
+    }
+    func popoverShouldClose(_ popover: NSPopover) -> Bool { allowingPopoverClose }
+    func popoverDidClose(_ notification: Notification) { allowingPopoverClose = false }
     @objc private func showPanel() {
         guard let button = statusItem.button else { return }
         picker.dismiss()
@@ -85,10 +94,16 @@ import SwiftUI
         // reliable than activating the accessory app, which can move focus to a
         // different display and make AppKit reposition the popover.
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        // Popovers use a panel window, which otherwise hides when this accessory app
+        // loses focus to a capture tool even when the popover itself stays open.
+        popover.contentViewController?.view.window?.hidesOnDeactivate = false
     }
     @objc private func checkForUpdates() { model.checkForUpdates?() }
     @objc private func quit() { NSApp.terminate(nil) }
-    func applicationWillTerminate(_ notification: Notification) { picker.stop() }
+    func applicationWillTerminate(_ notification: Notification) {
+        allowingPopoverClose = true
+        picker.stop()
+    }
 }
 @main struct SemanticApp {
     @MainActor static func main() {

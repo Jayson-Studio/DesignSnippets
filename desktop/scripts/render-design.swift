@@ -24,7 +24,7 @@ import CoreText
             RunLoop.main.run(until: Date().addingTimeInterval(0.15))
             if let mutate {
                 mutate()
-                RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+                RunLoop.main.run(until: Date().addingTimeInterval(0.35))
             }
             host.layoutSubtreeIfNeeded()
             guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { throw SemanticError("Could not render \(name)") }
@@ -100,6 +100,7 @@ import CoreText
             picker.createTab()
             picker.tabTitle = "New components"
         }
+        try render(PickerView(state: picker), name: "token-picker-new-tab-source") { picker.advanceTabCreation() }
         picker.selectSection("Foundations")
         if let flag = CommandLine.arguments.firstIndex(of: "--token-fixture"), CommandLine.arguments.indices.contains(flag + 1) {
             let indices = try JSONDecoder().decode([TokenIndex].self, from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[flag + 1])))

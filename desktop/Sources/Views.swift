@@ -31,6 +31,7 @@ struct SemanticPanel: View {
                     Button("Preferences…") { model.screen = "preferences" }
                     if model.allowsDeveloperSetup { Button("GitHub App setup…") { model.screen = "setup" } }
                     Divider()
+                    Button("Close menu") { onDismiss?() }
                     Button("Quit DesignSnippets") { NSApp.terminate(nil) }
                 } label: {
                     Text("⋮")
@@ -79,7 +80,6 @@ struct SemanticPanel: View {
             }
         }.frame(width: 420, height: selectedTab == "Preview" ? 480 : 620).background(Protegia.base)
         .foregroundStyle(Protegia.text).font(Protegia.font(14)).tint(Protegia.accent).preferredColorScheme(.dark)
-        .onExitCommand { onDismiss?() }
         .onChange(of: selectedTab) { _, tab in onTabChange?(tab) }
         .onChange(of: model.screen) { _, screen in
             search = ""

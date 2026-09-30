@@ -155,6 +155,7 @@ final class ColorCacheProtocol: URLProtocol {
         tabs.query = ""
         tabs.createTab()
         precondition(tabs.sections == ["Foundations", "Icons", "New tab"] && tabs.activeSection == "New tab")
+        precondition(tabs.tabCreationStep == .title)
         precondition(tabs.displayTitle(for: "New tab") == "New tab")
         var importCancelled = false
         tabs.cancelTabImport = { importCancelled = true }
@@ -172,13 +173,20 @@ final class ColorCacheProtocol: URLProtocol {
         tabs.tabTitle = "1234567890123456789012345extra"
         precondition(tabs.tabTitle == "1234567890123456789012345")
         tabs.tabTitle = "Components"
+        tabs.advanceTabCreation()
+        precondition(tabs.tabCreationStep == .source && requestedPath == nil)
+        tabs.returnToTabTitle()
+        precondition(tabs.tabCreationStep == .title && tabs.tabTitle == "Components")
+        tabs.advanceTabCreation()
+        tabs.submitTab()
+        precondition(tabs.tabError == "Enter a token file path." && requestedPath == nil && !tabs.tabBusy)
         tabs.tabFilePath = "src/components/button-tokens.json"
         tabs.submitTab()
         precondition(requestedTitle == "Components" && requestedPath == "src/components/button-tokens.json" && tabs.tabBusy)
         let componentsTab = PickerTab(title: requestedTitle!, path: requestedPath!)
         tabs.tabDefinitions.append(componentsTab)
         tabs.finishTab(componentsTab)
-        precondition(!tabs.creatingTab && tabs.activeSection == "Components" && tabs.tabTitle.isEmpty)
+        precondition(!tabs.creatingTab && tabs.tabCreationStep == .title && tabs.activeSection == "Components" && tabs.tabTitle.isEmpty)
         precondition(tabs.sections == ["Foundations", "Icons", "Components"])
         precondition(PickerTab.title(for: "src/components/button-tokens.json", existing: [iconTab]) == "Button Tokens")
         precondition(PickerTab.title(for: "other/icons.css", existing: [iconTab]) == "Icons 2")
