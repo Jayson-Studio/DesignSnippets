@@ -27,6 +27,8 @@ enum PickerLayout {
     }
 }
 
+enum TabCreationStep: Equatable { case title, source }
+
 @MainActor final class PickerState: ObservableObject {
     static let maxTabTitleLength = 25
     @Published var query = ""
@@ -34,6 +36,7 @@ enum PickerLayout {
     @Published var selected = 0
     @Published var tabDefinitions: [PickerTab] = []
     @Published var creatingTab = false
+    @Published var tabCreationStep: TabCreationStep = .title
     @Published var tabTitle = "" {
         didSet {
             if tabTitle.count > Self.maxTabTitleLength {
@@ -59,27 +62,42 @@ enum PickerLayout {
     func createTab() {
         guard !creatingTab else { return }
         creatingTab = true
+        tabCreationStep = .title
         query = ""
         tabTitle = ""; tabFilePath = ""; tabError = nil; tabBusy = false
         selectSection("New tab")
         beginTabEntry?()
     }
     func finishTab(_ tab: PickerTab) {
-        creatingTab = false; tabBusy = false; tabError = nil; tabTitle = ""; tabFilePath = ""
+        creatingTab = false; tabCreationStep = .title; tabBusy = false; tabError = nil; tabTitle = ""; tabFilePath = ""
         if tabDefinitions.contains(tab) { selectSection(tab.title) }
         endTabEntry?()
     }
     func cancelTab() {
         if tabBusy { cancelTabImport?() }
-        creatingTab = false; tabBusy = false; tabError = nil; tabTitle = ""; tabFilePath = ""
+        creatingTab = false; tabCreationStep = .title; tabBusy = false; tabError = nil; tabTitle = ""; tabFilePath = ""
         selectSection("Foundations")
         endTabEntry?()
     }
-    func submitTab() {
-        guard !tabBusy else { return }
-        guard let addTab else { tabError = "This picker cannot load token files."; return }
+    func advanceTabCreation() {
+        guard creatingTab && tabCreationStep == .title else { return }
         guard !tabTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             tabError = "Enter a title for this tab."; return
+        }
+        tabError = nil
+        tabCreationStep = .source
+    }
+    func returnToTabTitle() {
+        guard creatingTab && !tabBusy else { return }
+        tabError = nil
+        tabCreationStep = .title
+    }
+    func submitTab() {
+        guard tabCreationStep == .source else { advanceTabCreation(); return }
+        guard !tabBusy else { return }
+        guard let addTab else { tabError = "This picker cannot load token files."; return }
+        guard !tabFilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            tabError = "Enter a token file path."; return
         }
         tabError = nil
         tabBusy = true
@@ -89,7 +107,7 @@ enum PickerLayout {
         guard sections.contains(section) else { return }
         guard !tabBusy || !creatingTab || section == "New tab" else { return }
         if creatingTab && section != "New tab" {
-            creatingTab = false; tabTitle = ""; tabFilePath = ""; tabError = nil
+            creatingTab = false; tabCreationStep = .title; tabTitle = ""; tabFilePath = ""; tabError = nil
             endTabEntry?()
         }
         activeSection = section
@@ -205,42 +223,20 @@ struct PickerView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     if state.creatingTab && state.activeSection == "New tab" {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text("Add a tab").font(Protegia.font(16, bold: true))
-                            Text("Name the tab and choose its token file in your active GitHub project.")
-                                .font(Protegia.font(11)).foregroundStyle(Protegia.secondary)
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Title").font(Protegia.font(11, bold: true)).foregroundStyle(Protegia.secondary)
-                                TextField("Icons", text: $state.tabTitle)
-                                    .textFieldStyle(.plain).font(Protegia.font(12))
-                                    .padding(11).background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
-                                    .focused($tabTitleFocused).onSubmit { tabPathFocused = true }
-                                    .onKeyPress(.escape) { state.cancelTab(); return .handled }
-                                    .accessibilityLabel("Tab title")
+                        ZStack {
+                            if state.tabCreationStep == .title {
+                                tabTitleForm.transition(.asymmetric(
+                                    insertion: .move(edge: .leading).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)))
+                            } else {
+                                tabSourceForm.transition(.asymmetric(
+                                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                                    removal: .move(edge: .trailing).combined(with: .opacity)))
                             }
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Token file").font(Protegia.font(11, bold: true)).foregroundStyle(Protegia.secondary)
-                                TextField("src/tokens/icons.json", text: $state.tabFilePath)
-                                    .textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
-                                    .padding(11).background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
-                                    .focused($tabPathFocused).onSubmit { state.submitTab() }
-                                    .onKeyPress(.escape) { state.cancelTab(); return .handled }
-                                    .accessibilityLabel("Tab token file path")
-                            }
-                            if let error = state.tabError {
-                                Text(error).font(Protegia.font(11)).foregroundStyle(Protegia.destructive)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            HStack {
-                                Button("Cancel") { state.cancelTab() }.buttonStyle(.plain)
-                                    .foregroundStyle(Protegia.secondary)
-                                Spacer()
-                                Button(state.tabBusy ? "Loading…" : "Add file") { state.submitTab() }
-                                    .buttonStyle(.plain).foregroundStyle(Protegia.accent)
-                                    .disabled(state.tabBusy || state.tabTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                              || state.tabFilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                            }.font(Protegia.font(11, bold: true))
-                        }.padding(22).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                        .animation(.easeInOut(duration: 0.26), value: state.tabCreationStep)
                     } else if matches.isEmpty {
                         VStack(spacing: 6) {
                             Text(state.query.isEmpty ? "No entries in \(state.activeSection)" : "No matching entries")
@@ -324,6 +320,74 @@ struct PickerView: View {
             if creating { DispatchQueue.main.async { tabTitleFocused = true } }
             else { tabTitleFocused = false; tabPathFocused = false }
         }
+        .onChange(of: state.tabCreationStep) { _, step in
+            guard state.creatingTab else { return }
+            tabTitleFocused = false
+            tabPathFocused = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
+                guard state.creatingTab && state.tabCreationStep == step else { return }
+                if step == .title { tabTitleFocused = true }
+                else { tabPathFocused = true }
+            }
+        }
+    }
+
+    private var tabTitleForm: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Add a tab").font(Protegia.font(16, bold: true))
+            Text("Name the tab you want to create.")
+                .font(Protegia.font(11)).foregroundStyle(Protegia.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Title").font(Protegia.font(11, bold: true)).foregroundStyle(Protegia.secondary)
+                TextField("Icons", text: $state.tabTitle)
+                    .textFieldStyle(.plain).font(Protegia.font(12))
+                    .padding(11).background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
+                    .focused($tabTitleFocused).onSubmit { state.advanceTabCreation() }
+                    .onKeyPress(.escape) { state.cancelTab(); return .handled }
+                    .accessibilityLabel("Tab title")
+            }
+            if let error = state.tabError {
+                Text(error).font(Protegia.font(11)).foregroundStyle(Protegia.destructive)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Button("Cancel") { state.cancelTab() }.buttonStyle(.plain)
+                    .foregroundStyle(Protegia.secondary)
+                Spacer()
+                Button("Next") { state.advanceTabCreation() }
+                    .buttonStyle(.plain).foregroundStyle(Protegia.accent)
+                    .disabled(state.tabTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }.font(Protegia.font(11, bold: true))
+        }.padding(22).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+
+    private var tabSourceForm: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Choose a token file").font(Protegia.font(16, bold: true))
+            Text("Enter the file path in your active GitHub project for \(state.displayTitle(for: "New tab")).")
+                .font(Protegia.font(11)).foregroundStyle(Protegia.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Source file").font(Protegia.font(11, bold: true)).foregroundStyle(Protegia.secondary)
+                TextField("src/tokens/icons.json", text: $state.tabFilePath)
+                    .textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
+                    .padding(11).background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
+                    .focused($tabPathFocused).onSubmit { state.submitTab() }
+                    .onKeyPress(.escape) { state.cancelTab(); return .handled }
+                    .accessibilityLabel("Tab token file path")
+            }
+            if let error = state.tabError {
+                Text(error).font(Protegia.font(11)).foregroundStyle(Protegia.destructive)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Button("Back") { state.returnToTabTitle() }.buttonStyle(.plain)
+                    .foregroundStyle(Protegia.secondary).disabled(state.tabBusy)
+                Spacer()
+                Button(state.tabBusy ? "Loading…" : "Add file") { state.submitTab() }
+                    .buttonStyle(.plain).foregroundStyle(Protegia.accent)
+                    .disabled(state.tabBusy || state.tabFilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }.font(Protegia.font(11, bold: true))
+        }.padding(22).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     private func entry(_ token: DesignToken, index: Int, grid: Bool) -> some View {
