@@ -61,7 +61,8 @@ import CoreText
         picker.query = ""
         picker.tokens = [DesignToken(name: "--color-border-default", value: "#27272a", kind: "Color", source: "src/styles/theme.css"), DesignToken(name: "--border-default", value: "1px solid…", kind: "Token", source: "src/styles/theme.css"), DesignToken(name: "--border-focus", value: "1px solid…", kind: "Token", source: "src/styles/theme.css")]
         picker.tokens = [DesignToken(name: "--color-accent", value: "oklch(62.7955% 0.257683 29.2339)", kind: "Color", source: "theme.css"), DesignToken(name: "--font-weight-bold", value: "700", kind: "Typography", source: "theme.css"), DesignToken(name: "--radius-card", value: "8px", kind: "Radius", source: "theme.css")]
-        picker.tokens = [DesignToken(name: "--radius-cui-dot-cycle", value: "8px", kind: "Radius", source: "theme.css"), DesignToken(name: "--color-cui-primary", value: "#ff575c", kind: "Color", source: "theme.css"), DesignToken(name: "--text-cui-primary", value: #"{"fontSize":"24px","fontWeight":600}"#, kind: "Typography", source: "theme.css")]
+        picker.tokens = [DesignToken(name: "--radius-cui-dot-cycle", value: "8px", kind: "Radius", source: "theme.css"), DesignToken(name: "--color-cui-primary", value: "var(--color-cui-red-10)", kind: "Color", source: "theme.css"), DesignToken(name: "--text-cui-primary", value: #"{"fontSize":"24px","fontWeight":600}"#, kind: "Typography", source: "theme.css")]
+        picker.referenceTokens = [DesignToken(name: "--color-cui-red-10", value: "#ec5a72", kind: "Color", source: "scales.css")]
         try render(PickerView(state: picker), name: "token-picker")
         picker.canInsert = false
         picker.approximatePosition = true
