@@ -170,8 +170,8 @@ import SwiftUI
         precondition(try! JSONDecoder().decode(DesignToken.self, from: JSONEncoder().encode(custom)) == custom)
         let rgbTokens = TokenParser.parse(":root { --carbon-400: rgba(39,39,42,1); --color-primary: var(--carbon-400); --border: 1px solid rgb(39 39 42); --radius: 8px; }", source: "theme.css")
         func subtitle(_ name: String) -> String { TokenPreview.pickerDefinition(rgbTokens.first { $0.name == name }!, tokens: rgbTokens) }
-        precondition(subtitle("--color-primary") == "Carbon 400")
-        precondition(subtitle("--carbon-400") == "Color")
+        precondition(subtitle("--color-primary") == "Carbon 400 · #27272A")
+        precondition(subtitle("--carbon-400") == "Carbon 400 · #27272A")
         precondition(subtitle("--border") == "1px solid")
         precondition(subtitle("--radius") == "8px")
         precondition(!state.appendQuery("\n") && !state.appendQuery("\u{F702}"))
@@ -222,6 +222,31 @@ import SwiftUI
         precondition(TokenPreview.color("rgb(100% 0% 0% / 50%)")!.alphaComponent == 0.5)
         precondition(TokenPreview.color("var(--missing)") == nil)
         precondition(TokenPreview.color("not-a-color") == nil)
+        let danger = TokenParser.parse("""
+        :root {
+          --background-color-cui-danger: var(
+            --color-cui-red-10
+          );
+          --background-color-cui-danger-subtle: var(--color-cui-red-3);
+          --background-color-cui-danger-strong: var(--color-cui-red-11);
+          --border-color-cui-danger: var(--color-cui-red-11);
+          --text-color-cui-danger: var(--color-cui-red-11);
+          --background-color-cui-danger-on: oklch(0.99 0 0);
+          --text-color-cui-danger-on: oklch(0.99 0 0);
+        }
+        """, source: "theme.css")
+        let redScale = TokenParser.parse(":root { --color-cui-red-3: #3a141e; --color-cui-red-10: #ec5a72; --color-cui-red-11: #ff949d; }", source: "scales.css")
+        let dangerTokens = danger + redScale
+        func dangerSubtitle(_ name: String) -> String { TokenPreview.pickerDefinition(danger.first { $0.name == name }!, tokens: dangerTokens) }
+        precondition(dangerSubtitle("--background-color-cui-danger") == "Red 10 · #EC5A72")
+        precondition(dangerSubtitle("--background-color-cui-danger-subtle") == "Red 3 · #3A141E")
+        for name in ["--background-color-cui-danger-strong", "--border-color-cui-danger", "--text-color-cui-danger"] {
+            precondition(dangerSubtitle(name) == "Red 11 · #FF949D")
+            precondition(TokenPreview.colorPresentation(danger.first { $0.name == name }!, tokens: dangerTokens) != nil)
+        }
+        for name in ["--background-color-cui-danger-on", "--text-color-cui-danger-on"] {
+            precondition(dangerSubtitle(name).hasPrefix("#"))
+        }
         precondition(TokenPreview.radius(TokenPreview.resolved(colors.first { $0.name == "--radius-sm" }!, tokens: colors)) == 6)
         let cyclic = [DesignToken(name: "--a", value: "var(--b)", kind: "Color", source: "test"), DesignToken(name: "--b", value: "var(--a)", kind: "Color", source: "test")]
         precondition(TokenPreview.color(TokenPreview.resolved(cyclic[0], tokens: cyclic)) == nil)
@@ -241,7 +266,7 @@ import SwiftUI
         precondition(ambiguous.first?.typography?["fontWeight"] == nil)
         let dimensionToken = DesignToken(name: "--text-body", value: #"{"fontSize":{"value":16,"unit":"px"},"fontWeight":400}"#, kind: "Typography", source: "tokens.json")
         precondition(TokenPreview.definition(dimensionToken,tokens: []) == "16px · Regular")
-        precondition(TokenPreview.definition(accent,tokens: colors) == "Red · #ff0000")
+        precondition(TokenPreview.definition(accent,tokens: colors) == "Red · #FF0000")
         let field = CGRect(x: 150, y: 200, width: 400, height: 100)
         let glyph = CGRect(x: 180, y: 230, width: 8, height: 20)
         precondition(PickerEditor.usesManualPosition(bundle: "com.openai.codex"))

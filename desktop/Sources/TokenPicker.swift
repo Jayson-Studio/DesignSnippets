@@ -88,8 +88,11 @@ enum PickerLayout {
     @Published var selectionFromPointer = false
     private var lastPointerPosition: CGPoint?
     @Published var tokens: [DesignToken] = []
+    @Published var referenceTokens: [DesignToken] = []
+    var resolutionTokens: [DesignToken] { tokens + referenceTokens }
     func updateIndex(_ index: TokenIndex?) {
         tokens = index?.tokens ?? []
+        referenceTokens = index?.referenceTokens ?? []
         tabDefinitions = index?.pickerTabs ?? []
         if creatingTab { selected = 0; return }
         if !sections.contains(activeSection) { selectSection("Foundations") }
@@ -287,15 +290,15 @@ struct PickerView: View {
             Group {
                 if grid {
                     VStack(spacing: 6) {
-                        TokenBadge(token: token, tokens: state.tokens, size: 32)
+                        TokenBadge(token: token, tokens: state.resolutionTokens, size: 32)
                         Text(token.name).font(Protegia.font(9)).lineLimit(1)
                     }.frame(maxWidth: .infinity).frame(height: 64)
                 } else {
                     HStack(spacing: 12) {
-                        TokenBadge(token: token, tokens: state.tokens, size: 36)
+                        TokenBadge(token: token, tokens: state.resolutionTokens, size: 36)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(token.name).font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(1)
-                            Text(TokenPreview.pickerDefinition(token, tokens: state.tokens))
+                            Text(TokenPreview.pickerDefinition(token, tokens: state.resolutionTokens))
                                 .font(Protegia.font(11)).foregroundStyle(Protegia.tertiary).lineLimit(2)
                         }
                         Spacer(minLength: 6)

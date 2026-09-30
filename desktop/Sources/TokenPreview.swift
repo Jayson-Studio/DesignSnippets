@@ -15,18 +15,40 @@ enum TokenPreview {
         default: return .regular
         }
     }
-    static func resolved(_ token: DesignToken, tokens: [DesignToken]) -> String {
+    private static func resolution(_ token: DesignToken, tokens: [DesignToken]) -> (value: String, reference: String?) {
         var value = token.value
+        var reference: String?
         var visited = Set<String>()
         for _ in 0..<16 {
-            guard let match = TokenParser.matches(#"var\((--[\w-]+)(?:,\s*([^()]+))?\)|\{([\w.-]+)\}"#, value).first else { break }
+            guard let match = TokenParser.matches(#"var\(\s*(--[\w-]+)\s*(?:,\s*([^()]+))?\s*\)|\{([\w.-]+)\}"#, value).first else { break }
             let name = match[1].isEmpty ? match[3] : match[1]
             guard visited.insert(name).inserted else { break }
             let referenced = tokens.first { $0.name == name && $0.source == token.source } ?? tokens.first { $0.name == name }
             guard let replacement = referenced?.value ?? (match[2].isEmpty ? nil : match[2]) else { break }
+            if referenced != nil { reference = name }
             value = value.replacingOccurrences(of: match[0], with: replacement)
         }
-        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (value.trimmingCharacters(in: .whitespacesAndNewlines), reference)
+    }
+    static func resolved(_ token: DesignToken, tokens: [DesignToken]) -> String {
+        resolution(token, tokens: tokens).value
+    }
+    static func colorPresentation(_ token: DesignToken, tokens: [DesignToken]) -> (color: NSColor, subtitle: String)? {
+        guard token.kind.lowercased() == "color" else { return nil }
+        let result = resolution(token, tokens: tokens)
+        guard let swatch = color(result.value), let srgb = swatch.usingColorSpace(.sRGB) else { return nil }
+        func byte(_ component: CGFloat) -> Int { min(255, max(0, Int((component * 255).rounded()))) }
+        let alpha = byte(srgb.alphaComponent)
+        let hex = String(format: "#%02X%02X%02X", byte(srgb.redComponent), byte(srgb.greenComponent), byte(srgb.blueComponent))
+            + (alpha == 255 ? "" : String(format: "%02X", alpha))
+        let source = result.reference ?? token.name
+        let scale: String?
+        if let match = TokenParser.matches(#"^--(?:color-)?(?:cui-)?([a-z][a-z0-9-]*?)-(\d+)$"#, source).first {
+            scale = match[1].split(separator: "-").map { $0.capitalized }.joined(separator: " ") + " " + match[2]
+        } else if let match = TokenParser.matches(#"^--(?:color-)?(?:cui-)?([a-z]+)$"#, source).first, result.reference != nil {
+            scale = match[1].capitalized
+        } else { scale = nil }
+        return (srgb, [scale, hex].compactMap { $0 }.joined(separator: " · "))
     }
     static func typography(_ value: String) -> [String: Any]? {
         guard let data = value.data(using: .utf8) else { return nil }
@@ -49,6 +71,7 @@ enum TokenPreview {
         return String(describing: value)
     }
     static func definition(_ token: DesignToken, tokens: [DesignToken]) -> String {
+        if let color = colorPresentation(token, tokens: tokens) { return color.subtitle }
         let value = resolved(token, tokens: tokens)
         if let properties = typography(token, tokens: tokens) {
             let parts = [property(properties["fontSize"]), property(properties["fontWeight"]).map(weightName), property(properties["letterSpacing"]).map { "Spacing \($0)" }, property(properties["lineHeight"]).map { "Line height \($0)" }, property(properties["fontFamily"])].compactMap { $0 }
@@ -62,6 +85,8 @@ enum TokenPreview {
         return value
     }
     static func pickerDefinition(_ token: DesignToken, tokens: [DesignToken]) -> String {
+        if let color = colorPresentation(token, tokens: tokens) { return color.subtitle }
+        if token.kind.lowercased() == "color" { return "Unresolved color" }
         let text = definition(token, tokens: tokens)
             .replacingOccurrences(of: #"(?i)\brgba?\([^()]*\)"#, with: "", options: .regularExpression)
         let parts = text.components(separatedBy: "·").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
@@ -135,15 +160,22 @@ struct TokenBadge: View {
         let kind = token.kind.lowercased()
         let properties = TokenPreview.typography(token, tokens: tokens)
         let radius = TokenPreview.radius(value)
-        let isText = kind == "typography" || token.name.contains("font") || (token.name.contains("text") && kind != "color")
+        let isText = kind != "color" && (kind == "typography" || token.name.contains("font") || token.name.contains("text"))
+        let color = TokenPreview.colorPresentation(token, tokens: tokens)
         ZStack(alignment: .topLeading) {
-            Color.white.opacity(0.19)
-            if token.pickerSection == "Icons", value.count <= 3, !value.isEmpty {
+            if kind != "color" { Color.white.opacity(0.19) }
+            if kind == "color" {
+                Circle().fill(color.map { Color(nsColor: $0.color) } ?? Color.clear)
+                    .overlay(Circle().stroke(.white.opacity(color == nil ? 0.5 : 0.14), lineWidth: 1))
+                    .frame(width: size * 0.9, height: size * 0.9)
+                    .frame(width: size, height: size)
+                if color == nil {
+                    Image(systemName: "questionmark").font(.system(size: size * 0.34, weight: .medium))
+                        .foregroundStyle(Protegia.tertiary).frame(width: size, height: size)
+                }
+            } else if token.pickerSection == "Icons", value.count <= 3, !value.isEmpty {
                 Text(value).font(.system(size: size * 0.6)).foregroundStyle(Protegia.text)
                     .frame(width: size, height: size)
-            } else if kind == "color", let color = TokenPreview.color(value) {
-                RoundedRectangle(cornerRadius: size * 0.13).fill(Color(nsColor: color))
-                    .overlay(RoundedRectangle(cornerRadius: size * 0.13).stroke(.white.opacity(0.15),lineWidth: 0.5)).padding(size * 0.16)
             } else if (kind == "radius" || token.name.contains("radius")), let radius {
                 UnevenRoundedRectangle(topLeadingRadius: min(radius,size * 0.3)).fill(.white.opacity(0.8))
                     .frame(width: size * 0.66, height: size * 0.66).offset(x: size * 0.4,y: size * 0.4)

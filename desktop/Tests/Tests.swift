@@ -64,6 +64,24 @@ final class MockProtocol: URLProtocol {
         }
         let index = try await client.index(repos[0], paths: ["src/styles/theme.css"], progress: { _ in })
         try check(index.tokens.first?.name == "--border-default" && index.revision == "revision" && index.sourceFiles == ["src/styles/theme.css"], "Direct file indexing and persisted selection")
+        MockProtocol.handler = { request in
+            switch request.url!.path {
+            case let path where path.contains("/commits/"):
+                return (200, try data(["sha": "revision"]))
+            case "/repos/test/system/contents/src/styles/theme.css":
+                let theme = ":root { --background-color-cui-danger: var(\n --color-cui-red-10\n ); }"
+                return (200, try data(["type": "file", "size": theme.utf8.count, "encoding": "base64", "content": Data(theme.utf8).base64EncodedString()] as [String: Any]))
+            case "/repos/test/system/contents/src/styles":
+                return (200, try data([["name": "theme.css", "type": "file", "size": 100], ["name": "scales.css", "type": "file", "size": 100]]))
+            case "/repos/test/system/contents/src/styles/scales.css":
+                let scales = ":root { --color-cui-red-10: #dc3b5d; } [data-theme=dark] { --color-cui-red-10: #ec5a72; }"
+                return (200, try data(["type": "file", "size": scales.utf8.count, "encoding": "base64", "content": Data(scales.utf8).base64EncodedString()] as [String: Any]))
+            default: throw SemanticError("Unexpected color scale request")
+            }
+        }
+        let semanticIndex = try await client.index(repos[0], paths: ["src/styles/theme.css"], progress: { _ in })
+        try check(semanticIndex.tokens.count == 1 && semanticIndex.referenceTokens?.first?.value == "#ec5a72"
+                  && semanticIndex.sourceFiles == ["src/styles/theme.css"], "Resolve adjacent scales without exposing them as picker entries")
         let normalized = try GitHubClient.filePaths([" src/styles/theme.css ", "", "src/styles/theme.css", "design tokens.json"])
         try check(normalized == ["src/styles/theme.css", "design tokens.json"], "Normalize and deduplicate file paths")
         for invalid in ["../tokens.css", "/tokens.css", "https://github.com/test/tokens.css", "src/", "theme.ts"] {

@@ -103,6 +103,10 @@ struct GitHubClient {
     func index(_ repo: Repository, paths input: [String], progress: @escaping @Sendable (String) async -> Void) async throws -> TokenIndex {
         struct Commit: Decodable { let sha: String }
         struct File: Decodable { let type: String; let size: Int; let content: String?; let encoding: String? }
+        struct DirectoryEntry: Decodable { let name: String; let type: String; let size: Int }
+        func encodedPath(_ path: String) -> String {
+            path.components(separatedBy: "/").map { $0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? $0 }.joined(separator: "/")
+        }
         let paths = try Self.filePaths(input)
         let branch = repo.default_branch.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? repo.default_branch
         await progress("Opening \(repo.default_branch)…")
@@ -111,9 +115,8 @@ struct GitHubClient {
         for (position, path) in paths.enumerated() {
             try Task.checkCancellation()
             await progress("Reading \(position + 1) of \(paths.count): \(path)")
-            let encoded = path.components(separatedBy: "/").map { $0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? $0 }.joined(separator: "/")
             let file: File
-            do { file = try await request("/repos/\(repo.full_name)/contents/\(encoded)?ref=\(commit.sha)") }
+            do { file = try await request("/repos/\(repo.full_name)/contents/\(encodedPath(path))?ref=\(commit.sha)") }
             catch let error as DecodingError { _ = error; throw SemanticError("\(path) is not a readable file. Enter a file path rather than a directory.") }
             catch { throw SemanticError("Could not read \(path). \(error.localizedDescription)") }
             guard file.type == "file", file.size <= 1_000_000 else { throw SemanticError("\(path) must be a regular text file smaller than 1 MB.") }
@@ -124,8 +127,53 @@ struct GitHubClient {
             guard !parsed.isEmpty else { throw SemanticError("No definitions found in \(path). Choose a stylesheet with CSS variables/classes, or token JSON with value or $value definitions. Previous tokens are unchanged.") }
             tokens += parsed
         }
-        return TokenIndex(repository: repo, tokens: TokenParser.unique(tokens), syncedAt: Date(), revision: commit.sha, sourceFiles: paths)
+        let selected = TokenParser.unique(tokens)
+        var references: [DesignToken] = []
+        var missing = Self.missingColorReferences(in: selected)
+        if !missing.isEmpty { await progress("Resolving color scales…") }
+        let folders = Set(paths.map { ($0 as NSString).deletingLastPathComponent }).sorted()
+        for folder in folders where !missing.isEmpty {
+            try Task.checkCancellation()
+            let directory = folder.isEmpty ? "" : "/\(encodedPath(folder))"
+            let entries: [DirectoryEntry]
+            do { entries = try await request("/repos/\(repo.full_name)/contents\(directory)?ref=\(commit.sha)") }
+            catch is CancellationError { throw CancellationError() }
+            catch { continue }
+            let candidates = entries.filter { entry in
+                let stem = (entry.name as NSString).deletingPathExtension.lowercased()
+                let ext = (entry.name as NSString).pathExtension.lowercased()
+                return entry.type == "file" && entry.size <= 1_000_000
+                    && ["css", "scss", "sass", "less"].contains(ext)
+                    && ["scale", "color", "palette", "token"].contains(where: stem.contains)
+            }.sorted { $0.name < $1.name }.prefix(8)
+            for candidate in candidates where !missing.isEmpty {
+                try Task.checkCancellation()
+                let path = folder.isEmpty ? candidate.name : "\(folder)/\(candidate.name)"
+                if paths.contains(path) { continue }
+                do {
+                    let file: File = try await request("/repos/\(repo.full_name)/contents/\(encodedPath(path))?ref=\(commit.sha)")
+                    guard file.type == "file", file.size <= 1_000_000, file.encoding == "base64",
+                          let content = file.content, let data = Data(base64Encoded: content, options: .ignoreUnknownCharacters),
+                          let text = String(data: data, encoding: .utf8) else { continue }
+                    let parsed = TokenParser.parse(text, source: path)
+                    if !Set(parsed.map(\.name)).isDisjoint(with: missing) {
+                        references += parsed
+                        missing = Self.missingColorReferences(in: selected + references)
+                    }
+                } catch is CancellationError { throw CancellationError() }
+                catch { continue }
+            }
+        }
+        return TokenIndex(repository: repo, tokens: selected, syncedAt: Date(), revision: commit.sha,
+                          sourceFiles: paths, referenceTokens: references.isEmpty ? nil : TokenParser.unique(references))
+    }
+
+    private static func missingColorReferences(in tokens: [DesignToken]) -> Set<String> {
+        let available = Set(tokens.map(\.name))
+        let referenced = tokens.filter { $0.kind.lowercased() == "color" }.flatMap { token in
+            TokenParser.matches(#"var\(\s*(--[\w-]+)"#, token.value).map { $0[1] }
+        }
+        return Set(referenced).subtracting(available)
     }
 
 }
-

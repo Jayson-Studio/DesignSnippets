@@ -39,6 +39,7 @@ import SwiftUI
     private let cacheURL: URL
     var activeIndex: TokenIndex? { indices.first { $0.repository.id == activeID } }
     var tokens: [DesignToken] { activeIndex?.tokens ?? [] }
+    var resolutionTokens: [DesignToken] { tokens + (activeIndex?.referenceTokens ?? []) }
     let supportedApps: [(name: String, id: String)] = [
         ("ChatGPT", "com.openai.chat"), ("Codex", "com.openai.codex"), ("Claude", "com.anthropic.claudefordesktop"),
         ("Cursor", "com.todesktop.230313mzl4w4u92"), ("Visual Studio Code", "com.microsoft.VSCode"),

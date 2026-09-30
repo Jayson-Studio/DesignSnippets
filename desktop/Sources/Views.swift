@@ -108,7 +108,7 @@ struct SemanticPanel: View {
                 if filtered.isEmpty { Text("No matching definitions.").font(Protegia.font(12)).foregroundStyle(Protegia.secondary) }
                 LazyVStack(spacing: 0) { ForEach(filtered.prefix(60)) { token in
                     Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(token.name, forType: .string); model.status = "Copied \(token.name)" } label: {
-                        HStack(spacing: 9) { TokenBadge(token: token, tokens: model.tokens); VStack(alignment: .leading, spacing: 4) { Text(token.name).font(.system(size: 11, design: .monospaced)).lineLimit(1); Text(TokenPreview.definition(token, tokens: model.tokens)).font(Protegia.font(10)).foregroundStyle(Protegia.secondary).lineLimit(1) }; Spacer(); Image(systemName: "doc.on.doc").font(Protegia.font(12)).foregroundStyle(Protegia.tertiary) }.padding(.vertical, 9).contentShape(Rectangle())
+                        HStack(spacing: 9) { TokenBadge(token: token, tokens: model.resolutionTokens); VStack(alignment: .leading, spacing: 4) { Text(token.name).font(.system(size: 11, design: .monospaced)).lineLimit(1); Text(TokenPreview.definition(token, tokens: model.resolutionTokens)).font(Protegia.font(10)).foregroundStyle(Protegia.secondary).lineLimit(1) }; Spacer(); Image(systemName: "doc.on.doc").font(Protegia.font(12)).foregroundStyle(Protegia.tertiary) }.padding(.vertical, 9).contentShape(Rectangle())
                     }.buttonStyle(.plain).help("Copy \(token.name)")
                 } }
                 if filtered.count > 60 { Text("Showing 60 of \(filtered.count). Search to narrow the list.").font(Protegia.font(10)).foregroundStyle(Protegia.secondary) }
@@ -169,7 +169,7 @@ struct SemanticPanel: View {
                 Label(repo.full_name, systemImage: "folder").font(Protegia.font(14, bold: true))
                 Text("Reading from \(repo.default_branch)").font(Protegia.font(12)).foregroundStyle(Protegia.secondary)
             }
-            Text("Point DesignSnippets to the stylesheet that defines your design system. Only the files you choose are read.").font(Protegia.font(12)).foregroundStyle(Protegia.secondary)
+            Text("Choose the stylesheet that defines your design system. Nearby palette files may also be read to resolve color previews.").font(Protegia.font(12)).foregroundStyle(Protegia.secondary)
             VStack(alignment: .leading, spacing: 8) {
                 Text("File paths · one per line").font(Protegia.font(12))
                 TextEditor(text: $model.tokenFilePaths).font(.system(size: 12, design: .monospaced))
