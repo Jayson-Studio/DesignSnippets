@@ -155,6 +155,7 @@ final class ColorCacheProtocol: URLProtocol {
         tabs.query = ""
         tabs.createTab()
         precondition(tabs.sections == ["Foundations", "Icons", "New tab"] && tabs.activeSection == "New tab")
+        precondition(tabs.displayTitle(for: "New tab") == "New tab")
         var importCancelled = false
         tabs.cancelTabImport = { importCancelled = true }
         tabs.tabBusy = true
@@ -167,6 +168,10 @@ final class ColorCacheProtocol: URLProtocol {
         tabs.submitTab()
         precondition(tabs.tabError == "Enter a title for this tab." && !tabs.tabBusy && requestedPath == nil)
         tabs.tabTitle = "Components"
+        precondition(tabs.displayTitle(for: "New tab") == "Components")
+        tabs.tabTitle = "1234567890123456789012345extra"
+        precondition(tabs.tabTitle == "1234567890123456789012345")
+        tabs.tabTitle = "Components"
         tabs.tabFilePath = "src/components/button-tokens.json"
         tabs.submitTab()
         precondition(requestedTitle == "Components" && requestedPath == "src/components/button-tokens.json" && tabs.tabBusy)
@@ -174,6 +179,7 @@ final class ColorCacheProtocol: URLProtocol {
         tabs.tabDefinitions.append(componentsTab)
         tabs.finishTab(componentsTab)
         precondition(!tabs.creatingTab && tabs.activeSection == "Components" && tabs.tabTitle.isEmpty)
+        precondition(tabs.sections == ["Foundations", "Icons", "Components"])
         precondition(PickerTab.title(for: "src/components/button-tokens.json", existing: [iconTab]) == "Button Tokens")
         precondition(PickerTab.title(for: "other/icons.css", existing: [iconTab]) == "Icons 2")
         // The Preview search field uses this handler for picker navigation and selection.
@@ -223,6 +229,11 @@ final class ColorCacheProtocol: URLProtocol {
         var titleRejected = false
         fileModel.addPickerTab(title: "colors", path: "other.css") { if case .failure = $0 { titleRejected = true } }
         precondition(titleRejected)
+        var longTitleRejected = false
+        fileModel.addPickerTab(title: "12345678901234567890123456", path: "other.css") {
+            if case .failure = $0 { longTitleRejected = true }
+        }
+        precondition(longTitleRejected)
         try? FileManager.default.removeItem(at: cache.deletingLastPathComponent())
         let cssSections = TokenParser.parse(":root { --icon-size: 16px; } .icon-check {} .button {}", source: "theme.css")
         precondition(cssSections.first { $0.name == "--icon-size" }?.pickerSection == "Foundations")
