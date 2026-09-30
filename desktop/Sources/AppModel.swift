@@ -156,9 +156,9 @@ import SwiftUI
         guard !busy else { completion(.failure(SemanticError("Wait for the current import to finish."))); return }
         do {
             let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !title.isEmpty, title.count <= 48,
+            guard !title.isEmpty, title.count <= PickerState.maxTabTitleLength,
                   !title.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
-                throw SemanticError("Enter a tab title of up to 48 characters.")
+                throw SemanticError("Enter a tab title of up to 25 characters.")
             }
             let path = try GitHubClient.filePaths([rawPath])[0]
             let paths = index.sourceFiles ?? Array(Set(index.tokens.map(\.source))).sorted()

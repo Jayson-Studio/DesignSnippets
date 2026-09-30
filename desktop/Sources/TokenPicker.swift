@@ -28,12 +28,19 @@ enum PickerLayout {
 }
 
 @MainActor final class PickerState: ObservableObject {
+    static let maxTabTitleLength = 25
     @Published var query = ""
     @Published private(set) var activeSection = "Foundations"
     @Published var selected = 0
     @Published var tabDefinitions: [PickerTab] = []
     @Published var creatingTab = false
-    @Published var tabTitle = ""
+    @Published var tabTitle = "" {
+        didSet {
+            if tabTitle.count > Self.maxTabTitleLength {
+                tabTitle = String(tabTitle.prefix(Self.maxTabTitleLength))
+            }
+        }
+    }
     @Published var tabFilePath = ""
     @Published var tabError: String? = nil
     @Published var tabBusy = false
@@ -43,6 +50,11 @@ enum PickerLayout {
     var cancelTabImport: (() -> Void)?
     var sections: [String] {
         ["Foundations"] + tabDefinitions.map(\.title) + (creatingTab ? ["New tab"] : [])
+    }
+    func displayTitle(for section: String) -> String {
+        guard creatingTab && section == "New tab" else { return section }
+        let title = tabTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? section : title
     }
     func createTab() {
         guard !creatingTab else { return }
@@ -265,21 +277,26 @@ struct PickerView: View {
                     HStack(spacing: 4) {
                         ForEach(state.sections, id: \.self) { section in
                             Button { state.selectSection(section, pointer: NSEvent.mouseLocation) } label: {
-                                Text(section).font(Protegia.font(12, bold: true)).fixedSize()
+                                Text(state.displayTitle(for: section)).font(Protegia.font(12, bold: true)).fixedSize()
                                     .padding(.horizontal, 12).padding(.vertical, 10)
                                     .background(state.activeSection == section ? Protegia.level2 : .clear, in: Capsule())
                             }.buttonStyle(.plain).id(section)
                                 .accessibilityAddTraits(state.activeSection == section ? .isSelected : [])
-                            if section == "Foundations" {
-                                Button { state.createTab() } label: {
-                                    Image(systemName: "plus").font(Protegia.font(12, bold: true))
-                                        .frame(width: 30, height: 30)
-                                }.buttonStyle(.plain).accessibilityLabel("Add tab")
-                                    .disabled(state.tabBusy)
-                            }
                         }
+                        Button { state.createTab() } label: {
+                            Image(systemName: "plus").font(Protegia.font(12, bold: true))
+                                .frame(width: 30, height: 30)
+                        }.buttonStyle(.plain).accessibilityLabel("Add tab")
+                            .disabled(state.creatingTab || state.tabBusy).id("add-tab")
                     }.padding(.horizontal, 14).padding(.vertical, 10)
-                }.onChange(of: state.activeSection) { _, section in proxy.scrollTo(section, anchor: .center) }
+                }.onChange(of: state.activeSection) { _, section in
+                    proxy.scrollTo(section == "New tab" ? "add-tab" : section, anchor: .trailing)
+                }.onChange(of: state.tabTitle) { _, _ in
+                    if state.creatingTab { proxy.scrollTo("add-tab", anchor: .trailing) }
+                }.onChange(of: state.tabDefinitions.count) { oldCount, newCount in
+                    let addedSelectedTab = newCount > oldCount && state.tabDefinitions.last?.title == state.activeSection
+                    proxy.scrollTo(state.creatingTab || addedSelectedTab ? "add-tab" : state.activeSection, anchor: .trailing)
+                }
             }
             ProtegiaDivider().padding(.horizontal, 14)
             HStack(spacing: 8) {

@@ -96,7 +96,10 @@ import CoreText
             DesignToken(name: "icons." + $0.0, value: $0.1, kind: "Icon", source: "icons.json", section: "Icons")
         }
         try render(PickerView(state: picker), name: "token-picker-icons") { picker.selectSection("Icons") }
-        try render(PickerView(state: picker), name: "token-picker-new-tab") { picker.createTab() }
+        try render(PickerView(state: picker), name: "token-picker-new-tab") {
+            picker.createTab()
+            picker.tabTitle = "New components"
+        }
         picker.selectSection("Foundations")
         if let flag = CommandLine.arguments.firstIndex(of: "--token-fixture"), CommandLine.arguments.indices.contains(flag + 1) {
             let indices = try JSONDecoder().decode([TokenIndex].self, from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[flag + 1])))

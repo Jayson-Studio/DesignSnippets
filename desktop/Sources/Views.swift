@@ -5,13 +5,16 @@ let semanticGreen = Protegia.accent
 struct SemanticPanel: View {
     @ObservedObject var model: AppModel
     var appVersion: String
+    var onDismiss: (() -> Void)?
     var onTabChange: ((String) -> Void)?
     @State private var search = ""
     @State private var selectedTab: String
     init(model: AppModel, appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development",
-         initialTab: String = "Default", onTabChange: ((String) -> Void)? = nil) {
+         initialTab: String = "Default", onDismiss: (() -> Void)? = nil,
+         onTabChange: ((String) -> Void)? = nil) {
         self.model = model
         self.appVersion = appVersion
+        self.onDismiss = onDismiss
         self.onTabChange = onTabChange
         _selectedTab = State(initialValue: initialTab)
     }
@@ -76,6 +79,7 @@ struct SemanticPanel: View {
             }
         }.frame(width: 420, height: selectedTab == "Preview" ? 480 : 620).background(Protegia.base)
         .foregroundStyle(Protegia.text).font(Protegia.font(14)).tint(Protegia.accent).preferredColorScheme(.dark)
+        .onExitCommand { onDismiss?() }
         .onChange(of: selectedTab) { _, tab in onTabChange?(tab) }
         .onChange(of: model.screen) { _, screen in
             search = ""
