@@ -91,7 +91,7 @@ import SwiftUI
                 token = accessToken; deviceCode = nil
                 try await loadRepositories()
                 if needsColorRefresh {
-                    do { try await refreshCachedColors() }
+                    do { try await refreshCachedColors(using: GitHubClient(token: accessToken)) }
                     catch is CancellationError { throw CancellationError() }
                     catch {
                         self.error = "Could not refresh cached color previews. \(error.localizedDescription)"
@@ -99,7 +99,10 @@ import SwiftUI
                         screen = "home"
                     }
                 }
-            } catch is CancellationError { }
+            } catch is CancellationError {
+                status = account == nil ? "" : "Color refresh canceled. Cached definitions are unchanged."
+                if account != nil { screen = "home" }
+            }
             catch { self.error = error.localizedDescription }
             busy = false; deviceCode = nil
         }
@@ -112,12 +115,12 @@ import SwiftUI
         try Task.checkCancellation()
         account = user.login; repositories = repos; status = ""; screen = "projects"
     }
-    private func refreshCachedColors() async throws {
-        guard let old = activeIndex, let accessToken = token else { return }
+    func refreshCachedColors(using client: GitHubClient) async throws {
+        guard let old = activeIndex else { return }
         let paths = old.sourceFiles ?? Array(Set(old.tokens.map(\.source))).sorted()
         guard !paths.isEmpty else { throw SemanticError("Choose the project's token files and refresh them.") }
         status = "Updating cached color previews…"
-        var updated = try await GitHubClient(token: accessToken).index(old.repository, paths: paths) { message in
+        var updated = try await client.index(old.repository, paths: paths) { message in
             await MainActor.run { self.status = message }
         }
         try Task.checkCancellation()
@@ -173,7 +176,9 @@ import SwiftUI
         } catch { completion(.failure(error)) }
     }
     func refreshTokens(_ repo: Repository) {
-        guard let paths = indices.first(where: { $0.repository.id == repo.id })?.sourceFiles else { chooseFiles(repo); return }
+        guard let index = indices.first(where: { $0.repository.id == repo.id }) else { chooseFiles(repo); return }
+        let paths = index.sourceFiles ?? Array(Set(index.tokens.map(\.source))).sorted()
+        guard !paths.isEmpty else { chooseFiles(repo); return }
         sync(repo, paths: paths)
     }
     func sync(_ repo: Repository, paths: [String], pickerTabs: [PickerTab]? = nil,
