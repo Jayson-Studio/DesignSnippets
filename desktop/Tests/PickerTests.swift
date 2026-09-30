@@ -135,6 +135,14 @@ final class ColorCacheProtocol: URLProtocol {
         tabs.tabDefinitions = [iconTab]
         tabs.tokens += TokenParser.parse(#"{"check":{"$value":"✓","$type":"icon"}}"#, source: "icons.json")
         precondition(tabs.sections == ["Foundations", "Icons"] && tabs.matches.count == 4)
+        let layout = PickerState()
+        layout.tabDefinitions = [PickerTab(title: "Symbols", path: "icons.json"), PickerTab(title: "Icons", path: "components.json")]
+        layout.tokens = [DesignToken(name: "check", value: "✓", kind: "Icon", source: "icons.json"),
+                         DesignToken(name: "button", value: "Button", kind: "Class", source: "components.json")]
+        layout.selectSection("Symbols")
+        precondition(layout.usesIconGrid)
+        layout.selectSection("Icons")
+        precondition(!layout.usesIconGrid)
         tabs.query = "check"
         tabs.selected = 8
         tabs.moveSection(-1)
@@ -153,15 +161,19 @@ final class ColorCacheProtocol: URLProtocol {
         tabs.cancelTab()
         precondition(importCancelled && tabs.sections == ["Foundations", "Icons"] && tabs.activeSection == "Foundations")
         var requestedPath: String?
-        tabs.addTab = { requestedPath = $0 }
+        var requestedTitle: String?
+        tabs.addTab = { title, path in requestedTitle = title; requestedPath = path }
         tabs.createTab()
+        tabs.submitTab()
+        precondition(tabs.tabError == "Enter a title for this tab." && !tabs.tabBusy && requestedPath == nil)
+        tabs.tabTitle = "Components"
         tabs.tabFilePath = "src/components/button-tokens.json"
         tabs.submitTab()
-        precondition(requestedPath == "src/components/button-tokens.json" && tabs.tabBusy)
-        let componentsTab = PickerTab(title: "Button Tokens", path: requestedPath!)
+        precondition(requestedTitle == "Components" && requestedPath == "src/components/button-tokens.json" && tabs.tabBusy)
+        let componentsTab = PickerTab(title: requestedTitle!, path: requestedPath!)
         tabs.tabDefinitions.append(componentsTab)
         tabs.finishTab(componentsTab)
-        precondition(!tabs.creatingTab && tabs.activeSection == "Button Tokens")
+        precondition(!tabs.creatingTab && tabs.activeSection == "Components" && tabs.tabTitle.isEmpty)
         precondition(PickerTab.title(for: "src/components/button-tokens.json", existing: [iconTab]) == "Button Tokens")
         precondition(PickerTab.title(for: "other/icons.css", existing: [iconTab]) == "Icons 2")
         // The Preview search field uses this handler for picker navigation and selection.
@@ -201,13 +213,16 @@ final class ColorCacheProtocol: URLProtocol {
                                   syncedAt: Date(), revision: "existing", sourceFiles: ["theme.css"])
         fileModel.indices = [imported]; fileModel.activeID = repo.id
         var assignedTab: PickerTab?
-        fileModel.addPickerTab(path: "theme.css") { if case .success(let tab) = $0 { assignedTab = tab } }
-        precondition(assignedTab?.title == "Theme" && fileModel.activeIndex?.pickerTabs == [assignedTab!])
+        fileModel.addPickerTab(title: "Colors", path: "theme.css") { if case .success(let tab) = $0 { assignedTab = tab } }
+        precondition(assignedTab?.title == "Colors" && fileModel.activeIndex?.pickerTabs == [assignedTab!])
         let cached = try! JSONDecoder().decode([TokenIndex].self, from: Data(contentsOf: cache))
         precondition(cached.first?.pickerTabs == [assignedTab!])
         var duplicateFailed = false
-        fileModel.addPickerTab(path: "theme.css") { if case .failure = $0 { duplicateFailed = true } }
+        fileModel.addPickerTab(title: "Another", path: "theme.css") { if case .failure = $0 { duplicateFailed = true } }
         precondition(duplicateFailed)
+        var titleRejected = false
+        fileModel.addPickerTab(title: "colors", path: "other.css") { if case .failure = $0 { titleRejected = true } }
+        precondition(titleRejected)
         try? FileManager.default.removeItem(at: cache.deletingLastPathComponent())
         let cssSections = TokenParser.parse(":root { --icon-size: 16px; } .icon-check {} .button {}", source: "theme.css")
         precondition(cssSections.first { $0.name == "--icon-size" }?.pickerSection == "Foundations")

@@ -31,9 +31,9 @@ struct PreviewSandbox: View {
                 guard let picker, let index = picker.matches.firstIndex(of: token) else { return }
                 picker.selected = index
             }
-            picker.addTab = { [weak picker, weak model] path in
+            picker.addTab = { [weak picker, weak model] title, path in
                 guard let picker, let model else { return }
-                model.addPickerTab(path: path) { result in
+                model.addPickerTab(title: title, path: path) { result in
                     guard picker.creatingTab else { return }
                     switch result {
                     case .success(let tab): picker.updateIndex(model.activeIndex); picker.finishTab(tab)
