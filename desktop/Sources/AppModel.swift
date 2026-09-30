@@ -40,6 +40,10 @@ import SwiftUI
     var activeIndex: TokenIndex? { indices.first { $0.repository.id == activeID } }
     var tokens: [DesignToken] { activeIndex?.tokens ?? [] }
     var resolutionTokens: [DesignToken] { tokens + (activeIndex?.referenceTokens ?? []) }
+    var needsColorRefresh: Bool {
+        guard let index = activeIndex, index.repository.id != 0, index.colorReferencesScanned != true else { return false }
+        return index.tokens.contains { $0.kind.lowercased() == "color" && $0.value.contains("var(") }
+    }
     let supportedApps: [(name: String, id: String)] = [
         ("ChatGPT", "com.openai.chat"), ("Codex", "com.openai.codex"), ("Claude", "com.anthropic.claudefordesktop"),
         ("Cursor", "com.todesktop.230313mzl4w4u92"), ("Visual Studio Code", "com.microsoft.VSCode"),
@@ -86,7 +90,19 @@ import SwiftUI
                 try Task.checkCancellation()
                 token = accessToken; deviceCode = nil
                 try await loadRepositories()
-            } catch is CancellationError { }
+                if needsColorRefresh {
+                    do { try await refreshCachedColors(using: GitHubClient(token: accessToken)) }
+                    catch is CancellationError { throw CancellationError() }
+                    catch {
+                        self.error = "Could not refresh cached color previews. \(error.localizedDescription)"
+                        status = "Cached definitions are unchanged."
+                        screen = "home"
+                    }
+                }
+            } catch is CancellationError {
+                status = account == nil ? "" : "Color refresh canceled. Cached definitions are unchanged."
+                if account != nil { screen = "home" }
+            }
             catch { self.error = error.localizedDescription }
             busy = false; deviceCode = nil
         }
@@ -98,6 +114,22 @@ import SwiftUI
         let repos = try await client.repositories()
         try Task.checkCancellation()
         account = user.login; repositories = repos; status = ""; screen = "projects"
+    }
+    func refreshCachedColors(using client: GitHubClient) async throws {
+        guard let old = activeIndex else { return }
+        let paths = old.sourceFiles ?? Array(Set(old.tokens.map(\.source))).sorted()
+        guard !paths.isEmpty else { throw SemanticError("Choose the project's token files and refresh them.") }
+        status = "Updating cached color previews…"
+        var updated = try await client.index(old.repository, paths: paths) { message in
+            await MainActor.run { self.status = message }
+        }
+        try Task.checkCancellation()
+        updated.pickerTabs = (old.pickerTabs ?? []).filter { paths.contains($0.path) }
+        let saved = indices.map { $0.repository.id == old.repository.id ? updated : $0 }
+        try persist(saved)
+        indices = saved
+        status = "Updated color previews for \(old.repository.full_name)."
+        screen = "home"
     }
     func refreshRepositories() {
         task?.cancel(); busy = true; error = nil
@@ -144,7 +176,9 @@ import SwiftUI
         } catch { completion(.failure(error)) }
     }
     func refreshTokens(_ repo: Repository) {
-        guard let paths = indices.first(where: { $0.repository.id == repo.id })?.sourceFiles else { chooseFiles(repo); return }
+        guard let index = indices.first(where: { $0.repository.id == repo.id }) else { chooseFiles(repo); return }
+        let paths = index.sourceFiles ?? Array(Set(index.tokens.map(\.source))).sorted()
+        guard !paths.isEmpty else { chooseFiles(repo); return }
         sync(repo, paths: paths)
     }
     func sync(_ repo: Repository, paths: [String], pickerTabs: [PickerTab]? = nil,

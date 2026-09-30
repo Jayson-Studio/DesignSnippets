@@ -1,8 +1,23 @@
 import AppKit
 import SwiftUI
 
+final class ColorCacheProtocol: URLProtocol {
+    static var handler: ((URLRequest) throws -> (Int, Data))?
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        do {
+            let (status, data) = try Self.handler!(request)
+            client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch { client?.urlProtocol(self, didFailWithError: error) }
+    }
+    override func stopLoading() { }
+}
+
 @main struct PickerTests {
-    @MainActor static func main() {
+    @MainActor static func main() async {
         let testDefaults = UserDefaults(suiteName: "DesignSnippets.GitHubConfigurationTests")!
         let arguments = testDefaults.volatileDomain(forName: UserDefaults.argumentDomain)
         testDefaults.setVolatileDomain(arguments.merging(["githubClientID": "Iv1.stale", "githubAppSlug": "old-preview"]) { _, value in value }, forName: UserDefaults.argumentDomain)
@@ -20,6 +35,44 @@ import SwiftUI
         // Command-line defaults supply enable intent without writing user preferences.
         let model = AppModel(preview: true)
         precondition(model.pickerRequested && model.allApps)
+        let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent("color-cache-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: cacheURL) }
+        let cachedModel = AppModel(preview: true, cacheURL: cacheURL)
+        let cachedRepo = Repository(id: 43, full_name: "example/colors", default_branch: "main", private: false)
+        let cachedColor = DesignToken(name: "--color-danger", value: "var(--red-10)", kind: "Color", source: "theme.css")
+        var oldIndex = TokenIndex(repository: cachedRepo, tokens: [cachedColor], syncedAt: Date(), revision: "old")
+        cachedModel.indices = [oldIndex]; cachedModel.activeID = cachedRepo.id
+        precondition(cachedModel.needsColorRefresh)
+        oldIndex.colorReferencesScanned = true
+        cachedModel.indices = [oldIndex]
+        precondition(!cachedModel.needsColorRefresh)
+        cachedModel.indices = [TokenIndex(repository: cachedRepo, tokens: [cachedColor], syncedAt: Date(), revision: "old")]
+        let cacheConfiguration = URLSessionConfiguration.ephemeral
+        cacheConfiguration.protocolClasses = [ColorCacheProtocol.self]
+        let cacheClient = GitHubClient(token: "test", session: URLSession(configuration: cacheConfiguration))
+        func response(_ value: Any) -> Data { try! JSONSerialization.data(withJSONObject: value) }
+        ColorCacheProtocol.handler = { request in
+            let path = request.url!.path
+            if path.contains("/commits/") { return (200, response(["sha": "new"])) }
+            if path.hasSuffix("/theme.css") {
+                let css = ":root { --color-danger: var(--red-10); }"
+                return (200, response(["type": "file", "size": css.utf8.count, "encoding": "base64", "content": Data(css.utf8).base64EncodedString()]))
+            }
+            if path.hasSuffix("/contents") { return (200, response([["name": "theme.css", "type": "file", "size": 100], ["name": "scales.css", "type": "file", "size": 100]])) }
+            let css = ":root { --red-10: #ec5a72; }"
+            return (200, response(["type": "file", "size": css.utf8.count, "encoding": "base64", "content": Data(css.utf8).base64EncodedString()]))
+        }
+        try! await cachedModel.refreshCachedColors(using: cacheClient)
+        precondition(cachedModel.activeIndex?.sourceFiles == ["theme.css"]
+                     && cachedModel.activeIndex?.referenceTokens?.first?.value == "#ec5a72"
+                     && cachedModel.activeIndex?.colorReferencesScanned == true
+                     && !cachedModel.needsColorRefresh)
+        let savedColorCache = try! JSONDecoder().decode([TokenIndex].self, from: Data(contentsOf: cacheURL))
+        precondition(savedColorCache.first?.referenceTokens?.first?.value == "#ec5a72")
+        let retained = cachedModel.activeIndex!
+        ColorCacheProtocol.handler = { _ in (403, response(["message": "API limit"])) }
+        do { try await cachedModel.refreshCachedColors(using: cacheClient); preconditionFailure("Expected refresh failure") }
+        catch { precondition(cachedModel.activeIndex?.revision == retained.revision && cachedModel.activeIndex?.referenceTokens?.count == retained.referenceTokens?.count) }
         precondition(model.allowsPicker(in: "example.unlisted-editor"))
         var allowed = false
         var starts = 0

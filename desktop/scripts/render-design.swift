@@ -56,6 +56,13 @@ import CoreText
         previewModel.indices = [TokenIndex(repository: previewRepo, tokens: previewTokens, syncedAt: Date(), revision: "fixture")]
         previewModel.activeID = previewRepo.id
         try render(SemanticPanel(model: previewModel, appVersion: "0.3.14", initialTab: "Preview"), name: "preview-menu")
+        let staleModel = AppModel(preview: true)
+        let staleRepo = Repository(id: 43, full_name: "Jayson-Studio/mono", default_branch: "main", private: false)
+        staleModel.indices = [TokenIndex(repository: staleRepo,
+                                         tokens: [DesignToken(name: "--background-color-cui-accent", value: "var(--color-cui-orange-9)", kind: "Color", source: "packages/carrot-ui/src/theme.css")],
+                                         syncedAt: Date(), revision: "old", sourceFiles: ["packages/carrot-ui/src/theme.css"])]
+        staleModel.activeID = staleRepo.id
+        try render(SemanticPanel(model: staleModel, appVersion: "0.3.17"), name: "stale-color-cache")
         let picker = PickerState()
         picker.project = "Protegia / design system"
         picker.query = ""
