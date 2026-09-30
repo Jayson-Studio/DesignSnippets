@@ -135,6 +135,14 @@ final class ColorCacheProtocol: URLProtocol {
         tabs.tabDefinitions = [iconTab]
         tabs.tokens += TokenParser.parse(#"{"check":{"$value":"✓","$type":"icon"}}"#, source: "icons.json")
         precondition(tabs.sections == ["Foundations", "Icons"] && tabs.matches.count == 4)
+        let layout = PickerState()
+        layout.tabDefinitions = [PickerTab(title: "Symbols", path: "icons.json"), PickerTab(title: "Icons", path: "components.json")]
+        layout.tokens = [DesignToken(name: "check", value: "✓", kind: "Icon", source: "icons.json"),
+                         DesignToken(name: "button", value: "Button", kind: "Class", source: "components.json")]
+        layout.selectSection("Symbols")
+        precondition(layout.usesIconGrid)
+        layout.selectSection("Icons")
+        precondition(!layout.usesIconGrid)
         tabs.query = "check"
         tabs.selected = 8
         tabs.moveSection(-1)

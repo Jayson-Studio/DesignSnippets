@@ -152,6 +152,11 @@ enum PickerLayout {
         guard let path = tabDefinitions.first(where: { $0.title == section })?.path else { return [] }
         return tokens.filter { $0.source == path }
     }
+    var usesIconGrid: Bool {
+        guard activeSection != "Foundations" else { return false }
+        let entries = tokensForSection(activeSection)
+        return !entries.isEmpty && entries.allSatisfy { $0.pickerSection == "Icons" }
+    }
     var matches: [DesignToken] {
         let candidates = tokensForSection(activeSection)
         guard !query.isEmpty else { return candidates }
@@ -231,7 +236,7 @@ struct PickerView: View {
                             Text(state.query.isEmpty ? "Entries appear here when included in your imported files." : "Try another search or switch tabs.")
                                 .font(Protegia.font(11)).foregroundStyle(Protegia.tertiary)
                         }.multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(30)
-                    } else if state.activeSection == "Icons" {
+                    } else if state.usesIconGrid {
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
                             ForEach(Array(matches.enumerated()), id: \.element.id) { index, token in
                                 entry(token, index: index, grid: true)
