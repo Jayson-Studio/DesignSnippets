@@ -11,6 +11,7 @@ enum PickerLayout {
 
 @MainActor enum PreviewPickerKeyboard {
     @discardableResult static func handle(_ key: KeyEquivalent, modifiers: SwiftUI.EventModifiers, state: PickerState) -> Bool {
+        guard !state.creatingTab else { return false }
         guard modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return false }
         switch key {
         case .leftArrow: state.moveSection(-1)
@@ -32,10 +33,11 @@ enum PickerLayout {
     @Published var selected = 0
     @Published var tabDefinitions: [PickerTab] = []
     @Published var creatingTab = false
+    @Published var tabTitle = ""
     @Published var tabFilePath = ""
     @Published var tabError: String? = nil
     @Published var tabBusy = false
-    var addTab: ((String) -> Void)?
+    var addTab: ((String, String) -> Void)?
     var beginTabEntry: (() -> Void)?
     var endTabEntry: (() -> Void)?
     var cancelTabImport: (() -> Void)?
@@ -46,33 +48,36 @@ enum PickerLayout {
         guard !creatingTab else { return }
         creatingTab = true
         query = ""
-        tabFilePath = ""; tabError = nil; tabBusy = false
+        tabTitle = ""; tabFilePath = ""; tabError = nil; tabBusy = false
         selectSection("New tab")
         beginTabEntry?()
     }
     func finishTab(_ tab: PickerTab) {
-        creatingTab = false; tabBusy = false; tabError = nil; tabFilePath = ""
+        creatingTab = false; tabBusy = false; tabError = nil; tabTitle = ""; tabFilePath = ""
         if tabDefinitions.contains(tab) { selectSection(tab.title) }
         endTabEntry?()
     }
     func cancelTab() {
         if tabBusy { cancelTabImport?() }
-        creatingTab = false; tabBusy = false; tabError = nil; tabFilePath = ""
+        creatingTab = false; tabBusy = false; tabError = nil; tabTitle = ""; tabFilePath = ""
         selectSection("Foundations")
         endTabEntry?()
     }
     func submitTab() {
         guard !tabBusy else { return }
         guard let addTab else { tabError = "This picker cannot load token files."; return }
+        guard !tabTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            tabError = "Enter a title for this tab."; return
+        }
         tabError = nil
         tabBusy = true
-        addTab(tabFilePath)
+        addTab(tabTitle, tabFilePath)
     }
     func selectSection(_ section: String, pointer: CGPoint? = nil) {
         guard sections.contains(section) else { return }
         guard !tabBusy || !creatingTab || section == "New tab" else { return }
         if creatingTab && section != "New tab" {
-            creatingTab = false; tabFilePath = ""; tabError = nil
+            creatingTab = false; tabTitle = ""; tabFilePath = ""; tabError = nil
             endTabEntry?()
         }
         activeSection = section
@@ -172,6 +177,7 @@ struct PickerView: View {
     @ObservedObject var state: PickerState
     var allowsDragging = true
     var editableSearch = false
+    @FocusState private var tabTitleFocused: Bool
     @FocusState private var tabPathFocused: Bool
     var body: some View {
         let matches = state.matches
@@ -184,14 +190,26 @@ struct PickerView: View {
                     if state.creatingTab && state.activeSection == "New tab" {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("Add a tab").font(Protegia.font(16, bold: true))
-                            Text("Enter a token file in your active GitHub project. The file name becomes the tab name.")
+                            Text("Name the tab and choose its token file in your active GitHub project.")
                                 .font(Protegia.font(11)).foregroundStyle(Protegia.secondary)
-                            TextField("src/tokens/icons.json", text: $state.tabFilePath)
-                                .textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
-                                .padding(11).background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
-                                .focused($tabPathFocused).onSubmit { state.submitTab() }
-                                .onKeyPress(.escape) { state.cancelTab(); return .handled }
-                                .accessibilityLabel("Tab token file path")
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Title").font(Protegia.font(11, bold: true)).foregroundStyle(Protegia.secondary)
+                                TextField("Icons", text: $state.tabTitle)
+                                    .textFieldStyle(.plain).font(Protegia.font(12))
+                                    .padding(11).background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
+                                    .focused($tabTitleFocused).onSubmit { tabPathFocused = true }
+                                    .onKeyPress(.escape) { state.cancelTab(); return .handled }
+                                    .accessibilityLabel("Tab title")
+                            }
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Token file").font(Protegia.font(11, bold: true)).foregroundStyle(Protegia.secondary)
+                                TextField("src/tokens/icons.json", text: $state.tabFilePath)
+                                    .textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
+                                    .padding(11).background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
+                                    .focused($tabPathFocused).onSubmit { state.submitTab() }
+                                    .onKeyPress(.escape) { state.cancelTab(); return .handled }
+                                    .accessibilityLabel("Tab token file path")
+                            }
                             if let error = state.tabError {
                                 Text(error).font(Protegia.font(11)).foregroundStyle(Protegia.destructive)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -202,7 +220,8 @@ struct PickerView: View {
                                 Spacer()
                                 Button(state.tabBusy ? "Loading…" : "Add file") { state.submitTab() }
                                     .buttonStyle(.plain).foregroundStyle(Protegia.accent)
-                                    .disabled(state.tabBusy || state.tabFilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                    .disabled(state.tabBusy || state.tabTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                              || state.tabFilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }.font(Protegia.font(11, bold: true))
                         }.padding(22).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                     } else if matches.isEmpty {
@@ -257,9 +276,8 @@ struct PickerView: View {
                     }.padding(.horizontal, 14).padding(.vertical, 10)
                 }.onChange(of: state.activeSection) { _, section in proxy.scrollTo(section, anchor: .center) }
             }
-            if !(state.creatingTab && state.activeSection == "New tab") {
-                ProtegiaDivider().padding(.horizontal, 14)
-                HStack(spacing: 8) {
+            ProtegiaDivider().padding(.horizontal, 14)
+            HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(Protegia.tertiary)
                     if editableSearch {
                         TextField("", text: $state.query,
@@ -275,13 +293,14 @@ struct PickerView: View {
                     }
                     Spacer()
                     Text("esc").font(Protegia.font(11)).foregroundStyle(Protegia.tertiary)
-                }.padding(14).overlay { if allowsDragging { PickerDragHeader(state: state) } }
-            }
+            }.padding(14).opacity(state.creatingTab ? 0.45 : 1)
+                .disabled(state.creatingTab)
+                .overlay { if allowsDragging { PickerDragHeader(state: state) } }
         }.frame(width: PickerLayout.width, height: PickerLayout.height).background(Protegia.base)
         .foregroundStyle(Protegia.text).font(Protegia.font(12)).tint(Protegia.accent).preferredColorScheme(.dark)
         .onChange(of: state.creatingTab) { _, creating in
-            if creating { DispatchQueue.main.async { tabPathFocused = true } }
-            else { tabPathFocused = false }
+            if creating { DispatchQueue.main.async { tabTitleFocused = true } }
+            else { tabTitleFocused = false; tabPathFocused = false }
         }
     }
 
@@ -457,9 +476,9 @@ final class FloatingPanel: NSPanel {
     init(model: AppModel) {
         self.model = model
         state.choose = { [weak self] in self?.insert($0) }
-        state.addTab = { [weak self] path in
+        state.addTab = { [weak self] title, path in
             guard let self else { return }
-            self.model.addPickerTab(path: path) { [weak self] result in
+            self.model.addPickerTab(title: title, path: path) { [weak self] result in
                 guard let self else { return }
                 guard self.state.creatingTab else { return }
                 switch result {

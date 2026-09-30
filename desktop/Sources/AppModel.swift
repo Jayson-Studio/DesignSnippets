@@ -151,15 +151,24 @@ import SwiftUI
         do { sync(repo, paths: try GitHubClient.filePaths(tokenFilePaths.components(separatedBy: .newlines))) }
         catch { self.error = error.localizedDescription }
     }
-    func addPickerTab(path rawPath: String, completion: @escaping (Result<PickerTab, Error>) -> Void) {
+    func addPickerTab(title rawTitle: String, path rawPath: String, completion: @escaping (Result<PickerTab, Error>) -> Void) {
         guard let index = activeIndex else { completion(.failure(SemanticError("Choose a project before adding a tab."))); return }
         guard !busy else { completion(.failure(SemanticError("Wait for the current import to finish."))); return }
         do {
+            let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty, title.count <= 48,
+                  !title.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
+                throw SemanticError("Enter a tab title of up to 48 characters.")
+            }
             let path = try GitHubClient.filePaths([rawPath])[0]
             let paths = index.sourceFiles ?? Array(Set(index.tokens.map(\.source))).sorted()
             let tabs = index.pickerTabs ?? []
+            guard !["foundations", "new tab"].contains(title.lowercased()),
+                  !tabs.contains(where: { $0.title.localizedCaseInsensitiveCompare(title) == .orderedSame }) else {
+                throw SemanticError("Choose a unique tab title.")
+            }
             guard !tabs.contains(where: { $0.path == path }) else { throw SemanticError("This file already has a tab.") }
-            let tab = PickerTab(title: PickerTab.title(for: path, existing: tabs), path: path)
+            let tab = PickerTab(title: title, path: path)
             if paths.contains(path) {
                 var updatedIndex = index
                 updatedIndex.pickerTabs = tabs + [tab]
