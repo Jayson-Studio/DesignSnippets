@@ -129,23 +129,46 @@ struct GitHubClient {
         }
         let selected = TokenParser.unique(tokens)
         var references: [DesignToken] = []
-        var missing = Self.missingColorReferences(in: selected)
-        if !missing.isEmpty { await progress("Resolving color scales…") }
         let folders = Set(paths.map { ($0 as NSString).deletingLastPathComponent }).sorted()
-        for folder in folders where !missing.isEmpty {
+        for folder in folders {
+            let local = selected.filter { ($0.source as NSString).deletingLastPathComponent == folder }
+            var localReferences: [DesignToken] = []
+            var missing = Self.missingColorReferences(in: local)
+            if missing.isEmpty { continue }
+            await progress("Resolving color scales in \(folder.isEmpty ? "the repository root" : folder)…")
             try Task.checkCancellation()
             let directory = folder.isEmpty ? "" : "/\(encodedPath(folder))"
             let entries: [DirectoryEntry]
             do { entries = try await request("/repos/\(repo.full_name)/contents\(directory)?ref=\(commit.sha)") }
             catch is CancellationError { throw CancellationError() }
-            catch { continue }
+            catch { throw SemanticError("Could not inspect nearby color files in \(folder.isEmpty ? "the repository root" : folder). \(error.localizedDescription)") }
             let candidates = entries.filter { entry in
-                let stem = (entry.name as NSString).deletingPathExtension.lowercased()
                 let ext = (entry.name as NSString).pathExtension.lowercased()
                 return entry.type == "file" && entry.size <= 1_000_000
                     && ["css", "scss", "sass", "less"].contains(ext)
-                    && ["scale", "color", "palette", "token"].contains(where: stem.contains)
-            }.sorted { $0.name < $1.name }.prefix(8)
+            }.sorted { left, right in
+                func priority(_ name: String) -> Int {
+                    let stem = (name as NSString).deletingPathExtension.lowercased()
+                    return ["scale", "color", "palette", "token", "variable"].contains(where: stem.contains) ? 0 : 1
+                }
+                return priority(left.name) == priority(right.name) ? left.name < right.name : priority(left.name) < priority(right.name)
+            }
+            var parsedCandidates: [[DesignToken]] = []
+            var supportingError: Error?
+            func addNeededCandidates() {
+                var added = true
+                while added && !missing.isEmpty {
+                    added = false
+                    var position = 0
+                    while position < parsedCandidates.count {
+                        if !Set(parsedCandidates[position].map(\.name)).isDisjoint(with: missing) {
+                            localReferences += parsedCandidates.remove(at: position)
+                            missing = Self.missingColorReferences(in: local + localReferences)
+                            added = true
+                        } else { position += 1 }
+                    }
+                }
+            }
             for candidate in candidates where !missing.isEmpty {
                 try Task.checkCancellation()
                 let path = folder.isEmpty ? candidate.name : "\(folder)/\(candidate.name)"
@@ -156,13 +179,15 @@ struct GitHubClient {
                           let content = file.content, let data = Data(base64Encoded: content, options: .ignoreUnknownCharacters),
                           let text = String(data: data, encoding: .utf8) else { continue }
                     let parsed = TokenParser.parse(text, source: path)
-                    if !Set(parsed.map(\.name)).isDisjoint(with: missing) {
-                        references += parsed
-                        missing = Self.missingColorReferences(in: selected + references)
-                    }
+                    parsedCandidates.append(parsed)
+                    addNeededCandidates()
                 } catch is CancellationError { throw CancellationError() }
-                catch { continue }
+                catch { supportingError = error }
             }
+            if !missing.isEmpty, let supportingError {
+                throw SemanticError("Could not finish resolving nearby color files in \(folder.isEmpty ? "the repository root" : folder). \(supportingError.localizedDescription) Previous tokens are unchanged.")
+            }
+            references += localReferences
         }
         return TokenIndex(repository: repo, tokens: selected, syncedAt: Date(), revision: commit.sha,
                           sourceFiles: paths, referenceTokens: references.isEmpty ? nil : TokenParser.unique(references))
@@ -170,10 +195,18 @@ struct GitHubClient {
 
     private static func missingColorReferences(in tokens: [DesignToken]) -> Set<String> {
         let available = Set(tokens.map(\.name))
-        let referenced = tokens.filter { $0.kind.lowercased() == "color" }.flatMap { token in
+        let byName = Dictionary(grouping: tokens, by: \.name)
+        var pending = tokens.filter { $0.kind.lowercased() == "color" }.flatMap { token in
             TokenParser.matches(#"var\(\s*(--[\w-]+)"#, token.value).map { $0[1] }
         }
-        return Set(referenced).subtracting(available)
+        var referenced = Set<String>()
+        while let name = pending.popLast() {
+            guard referenced.insert(name).inserted else { continue }
+            for token in byName[name] ?? [] {
+                pending += TokenParser.matches(#"var\(\s*(--[\w-]+)"#, token.value).map { $0[1] }
+            }
+        }
+        return referenced.subtracting(available)
     }
 
 }

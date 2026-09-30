@@ -18,17 +18,27 @@ enum TokenPreview {
     private static func resolution(_ token: DesignToken, tokens: [DesignToken]) -> (value: String, reference: String?) {
         var value = token.value
         var reference: String?
+        var scaleReference: String?
+        let folder = (token.source as NSString).deletingLastPathComponent
         var visited = Set<String>()
         for _ in 0..<16 {
             guard let match = TokenParser.matches(#"var\(\s*(--[\w-]+)\s*(?:,\s*([^()]+))?\s*\)|\{([\w.-]+)\}"#, value).first else { break }
             let name = match[1].isEmpty ? match[3] : match[1]
             guard visited.insert(name).inserted else { break }
-            let referenced = tokens.first { $0.name == name && $0.source == token.source } ?? tokens.first { $0.name == name }
+            let referenced = tokens.first { $0.name == name && $0.source == token.source }
+                ?? tokens.first { $0.name == name && ($0.source as NSString).deletingLastPathComponent == folder }
+                ?? tokens.first { $0.name == name }
             guard let replacement = referenced?.value ?? (match[2].isEmpty ? nil : match[2]) else { break }
-            if referenced != nil { reference = name }
+            if referenced != nil {
+                reference = name
+                if scaleReference == nil,
+                   !TokenParser.matches(#"^--(?:color-)?(?:cui-)?[a-z][a-z0-9-]*?-\d+$"#, name).isEmpty {
+                    scaleReference = name
+                }
+            }
             value = value.replacingOccurrences(of: match[0], with: replacement)
         }
-        return (value.trimmingCharacters(in: .whitespacesAndNewlines), reference)
+        return (value.trimmingCharacters(in: .whitespacesAndNewlines), scaleReference ?? reference)
     }
     static func resolved(_ token: DesignToken, tokens: [DesignToken]) -> String {
         resolution(token, tokens: tokens).value

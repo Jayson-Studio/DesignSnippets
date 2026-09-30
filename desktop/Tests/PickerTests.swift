@@ -174,6 +174,12 @@ import SwiftUI
         precondition(subtitle("--carbon-400") == "Carbon 400 · #27272A")
         precondition(subtitle("--border") == "1px solid")
         precondition(subtitle("--radius") == "8px")
+        let sass = TokenParser.parse("--color: #fff\n--spacing: 8px\n--color-danger: var(\n  --color\n)\n", source: "tokens.sass")
+        precondition(sass.count == 3 && sass.first { $0.name == "--color" }?.value == "#fff"
+                     && sass.first { $0.name == "--spacing" }?.value == "8px"
+                     && TokenPreview.pickerDefinition(sass.first { $0.name == "--color-danger" }!, tokens: sass) == "Color · #FFFFFF")
+        let radiusAlias = TokenParser.parse(":root { --radius-md: 8px; --border-radius: var(--radius-md); }", source: "theme.css")
+        precondition(radiusAlias.first { $0.name == "--border-radius" }?.kind == "Radius")
         precondition(!state.appendQuery("\n") && !state.appendQuery("\u{F702}"))
         state.query = ""
         precondition(state.matches.count == 3)
@@ -239,6 +245,15 @@ import SwiftUI
         let dangerTokens = danger + redScale
         func dangerSubtitle(_ name: String) -> String { TokenPreview.pickerDefinition(danger.first { $0.name == name }!, tokens: dangerTokens) }
         precondition(dangerSubtitle("--background-color-cui-danger") == "Red 10 · #EC5A72")
+        let chained = [DesignToken(name: "--color-cui-red-10", value: "var(--base-red)", kind: "Color", source: "scales.css"),
+                       DesignToken(name: "--base-red", value: "#ec5a72", kind: "Color", source: "scales.css")]
+        precondition(TokenPreview.pickerDefinition(danger[0], tokens: danger + chained) == "Red 10 · #EC5A72")
+        let twoFolders = [DesignToken(name: "--color-danger", value: "var(--red-10)", kind: "Color", source: "a/theme.css"),
+                          DesignToken(name: "--color-danger", value: "var(--red-10)", kind: "Color", source: "b/theme.css"),
+                          DesignToken(name: "--red-10", value: "#111111", kind: "Color", source: "a/scales.css"),
+                          DesignToken(name: "--red-10", value: "#222222", kind: "Color", source: "b/scales.css")]
+        precondition(TokenPreview.pickerDefinition(twoFolders[0], tokens: twoFolders) == "Red 10 · #111111")
+        precondition(TokenPreview.pickerDefinition(twoFolders[1], tokens: twoFolders) == "Red 10 · #222222")
         precondition(dangerSubtitle("--background-color-cui-danger-subtle") == "Red 3 · #3A141E")
         for name in ["--background-color-cui-danger-strong", "--border-color-cui-danger", "--text-color-cui-danger"] {
             precondition(dangerSubtitle(name) == "Red 11 · #FF949D")

@@ -72,8 +72,8 @@ final class MockProtocol: URLProtocol {
                 let theme = ":root { --background-color-cui-danger: var(\n --color-cui-red-10\n ); }"
                 return (200, try data(["type": "file", "size": theme.utf8.count, "encoding": "base64", "content": Data(theme.utf8).base64EncodedString()] as [String: Any]))
             case "/repos/test/system/contents/src/styles":
-                return (200, try data([["name": "theme.css", "type": "file", "size": 100], ["name": "scales.css", "type": "file", "size": 100]]))
-            case "/repos/test/system/contents/src/styles/scales.css":
+                return (200, try data([["name": "theme.css", "type": "file", "size": 100], ["name": "variables.css", "type": "file", "size": 100]]))
+            case "/repos/test/system/contents/src/styles/variables.css":
                 let scales = ":root { --color-cui-red-10: #dc3b5d; } [data-theme=dark] { --color-cui-red-10: #ec5a72; }"
                 return (200, try data(["type": "file", "size": scales.utf8.count, "encoding": "base64", "content": Data(scales.utf8).base64EncodedString()] as [String: Any]))
             default: throw SemanticError("Unexpected color scale request")
@@ -82,6 +82,40 @@ final class MockProtocol: URLProtocol {
         let semanticIndex = try await client.index(repos[0], paths: ["src/styles/theme.css"], progress: { _ in })
         try check(semanticIndex.tokens.count == 1 && semanticIndex.referenceTokens?.first?.value == "#ec5a72"
                   && semanticIndex.sourceFiles == ["src/styles/theme.css"], "Resolve adjacent scales without exposing them as picker entries")
+        MockProtocol.handler = { request in
+            let path = request.url!.path
+            if path.contains("/commits/") { return (200, try data(["sha": "revision"])) }
+            if path.hasSuffix("/theme.css") {
+                let theme = ":root { --color-danger: var(--brand-danger); }"
+                return (200, try data(["type": "file", "size": theme.utf8.count, "encoding": "base64", "content": Data(theme.utf8).base64EncodedString()] as [String: Any]))
+            }
+            if path.hasSuffix("/a") || path.hasSuffix("/b") {
+                return (200, try data([["name": "theme.css", "type": "file", "size": 100], ["name": "colors-base.css", "type": "file", "size": 100], ["name": "scales.css", "type": "file", "size": 100]]))
+            }
+            let hex = path.contains("/a/") ? "#111111" : "#222222"
+            let content = path.hasSuffix("/colors-base.css") ? ":root { --raw-danger: \(hex); }" : ":root { --brand-danger: var(--raw-danger); }"
+            return (200, try data(["type": "file", "size": content.utf8.count, "encoding": "base64", "content": Data(content.utf8).base64EncodedString()] as [String: Any]))
+        }
+        let separate = try await client.index(repos[0], paths: ["a/theme.css", "b/theme.css"], progress: { _ in })
+        try check(separate.referenceTokens?.filter { $0.name == "--raw-danger" }.map(\.value).sorted() == ["#111111", "#222222"]
+                  && separate.referenceTokens?.filter { $0.name == "--brand-danger" }.count == 2,
+                  "Resolve alias chains and same-name scales separately for each selected folder")
+        MockProtocol.handler = { request in
+            switch request.url!.path {
+            case let path where path.contains("/commits/"):
+                return (200, try data(["sha": "revision"]))
+            case "/repos/test/system/contents/src/styles/theme.css":
+                let theme = ":root { --color-danger: var(--red-10); }"
+                return (200, try data(["type": "file", "size": theme.utf8.count, "encoding": "base64", "content": Data(theme.utf8).base64EncodedString()] as [String: Any]))
+            default: return (429, try data(["message": "API rate limit exceeded"]))
+            }
+        }
+        do {
+            _ = try await client.index(repos[0], paths: ["src/styles/theme.css"], progress: { _ in })
+            throw SemanticError("Expected color directory error")
+        } catch {
+            try check(error.localizedDescription.contains("Could not inspect nearby color files"), "Surface nearby palette fetch failures")
+        }
         let normalized = try GitHubClient.filePaths([" src/styles/theme.css ", "", "src/styles/theme.css", "design tokens.json"])
         try check(normalized == ["src/styles/theme.css", "design tokens.json"], "Normalize and deduplicate file paths")
         for invalid in ["../tokens.css", "/tokens.css", "https://github.com/test/tokens.css", "src/", "theme.ts"] {

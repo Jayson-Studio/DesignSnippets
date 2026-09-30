@@ -69,14 +69,14 @@ enum TokenParser {
         if source.lowercased().hasSuffix(".json") { return parseJSON(text, source: source) }
         let text = text.replacingOccurrences(of: #"/\*[\s\S]*?\*/"#, with: "", options: .regularExpression)
         var result: [DesignToken] = []
-        for parts in matches(#"(--[a-zA-Z_][\w-]*)\s*:\s*([^;{}]+)"#, text) {
+        for parts in matches(#"(--[a-zA-Z_][\w-]*)[ \t]*:[ \t]*((?:(?!\n[ \t]*--[a-zA-Z_][\w-]*[ \t]*:)[^;{}])+)"#, text) {
             let value = parts[2].trimmingCharacters(in: .whitespacesAndNewlines)
             let name = parts[1]
             let kind: String
             let colorLiteral = value.range(of: #"^(#|rgba?\(|hsla?\(|oklch\(|oklab\(|color\()"#, options: .regularExpression) != nil
             let colorName = name.range(of: "color|background|foreground|surface|accent|border", options: .regularExpression) != nil && !name.contains("width")
-            if colorLiteral || colorName && (value.hasPrefix("var(") || value.hasPrefix("{") || ["white", "black", "red", "blue", "green", "transparent"].contains(value.lowercased())) { kind = "Color" }
-            else if name.contains("radius") { kind = "Radius" }
+            if name.contains("radius") { kind = "Radius" }
+            else if colorLiteral || colorName && (value.hasPrefix("var(") || value.hasPrefix("{") || ["white", "black", "red", "blue", "green", "transparent"].contains(value.lowercased())) { kind = "Color" }
             else if name.contains("font") || name.contains("line-height") || name.contains("letter-spacing") { kind = "Typography" }
             else { kind = "Dimension" }
             result.append(DesignToken(name: name, value: value, kind: kind, source: source))
