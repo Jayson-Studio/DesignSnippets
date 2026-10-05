@@ -539,6 +539,22 @@ enum PickerCapture {
     }
 }
 
+struct PickerDismissalGate {
+    private(set) var pending = false
+
+    mutating func outsideInput() { pending = true }
+    mutating func appActivated(_ bundleID: String?) -> Bool {
+        pending = false
+        return !PickerCapture.isScreenshotApp(bundleID)
+    }
+    mutating func elapsed(frontBundleID: String?) -> Bool {
+        guard pending else { return false }
+        pending = false
+        return !PickerCapture.isScreenshotApp(frontBundleID)
+    }
+    mutating func cancel() { pending = false }
+}
+
 @MainActor final class TokenPicker {
     let model: AppModel
     let state = PickerState()
@@ -551,6 +567,7 @@ enum PickerCapture {
     private var initialRange: CFRange?
     private var placementTask: Task<Void, Never>?
     private var pendingOutsideDismiss: DispatchWorkItem?
+    private var dismissalGate = PickerDismissalGate()
     private var beginTask: Task<Void, Never>?
     private var pendingTrigger = false
     private var copyOnlyFallback = false
@@ -599,7 +616,8 @@ enum PickerCapture {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-                if PickerCapture.isScreenshotApp(app?.bundleIdentifier) {
+                let bundleID = app?.bundleIdentifier ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                if !self.dismissalGate.appActivated(bundleID) {
                     self.pendingOutsideDismiss?.cancel()
                     self.pendingOutsideDismiss = nil
                 } else if !self.state.creatingTab { self.dismiss() }
@@ -703,6 +721,7 @@ enum PickerCapture {
         if PickerCapture.isScreenshotApp(NSWorkspace.shared.frontmostApplication?.bundleIdentifier) {
             pendingOutsideDismiss?.cancel()
             pendingOutsideDismiss = nil
+            dismissalGate.cancel()
             return false
         }
         if type == .leftMouseDown || type == .rightMouseDown {
@@ -785,10 +804,11 @@ enum PickerCapture {
     private func scheduleOutsideDismiss() {
         guard pendingTrigger || target != nil || copyOnlyFallback || panel?.isVisible == true else { return }
         pendingOutsideDismiss?.cancel()
+        dismissalGate.outsideInput()
         let pending = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.pendingOutsideDismiss = nil
-            if !PickerCapture.isScreenshotApp(NSWorkspace.shared.frontmostApplication?.bundleIdentifier) {
+            if self.dismissalGate.elapsed(frontBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier) {
                 self.dismiss()
             }
         }
@@ -1029,6 +1049,7 @@ enum PickerCapture {
     func dismiss() {
         if state.creatingTab { state.cancelTab() }
         pendingOutsideDismiss?.cancel(); pendingOutsideDismiss = nil
+        dismissalGate.cancel()
         panel?.acceptsInput = false
         beginTask?.cancel(); beginTask = nil; pendingTrigger = false
         copyOnlyFallback = false; fallbackAnchor = nil; trackedSessionValid = true
