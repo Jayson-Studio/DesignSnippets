@@ -88,17 +88,26 @@ enum TokenPreview {
         if let dimension = value as? [String: Any], let number = dimension["value"], let unit = dimension["unit"] as? String { return "\(number)\(unit)" }
         return String(describing: value)
     }
+    static func fontSizeLabel(_ value: String, rootFontSize: Double = 16) -> String {
+        guard let match = TokenParser.matches(#"^\s*([0-9]*\.?[0-9]+)rem\s*$"#, value).first,
+              let rem = Double(match[1]), rootFontSize.isFinite, rootFontSize > 0 else { return value }
+        let pixels = (rem * rootFontSize).formatted(.number.precision(.fractionLength(0...2)))
+        return "\(value) (\(pixels)px)"
+    }
     static func definition(_ token: DesignToken, tokens: [DesignToken]) -> String {
         if let color = colorPresentation(token, tokens: tokens) { return color.subtitle }
         let value = resolved(token, tokens: tokens)
         if let properties = typography(token, tokens: tokens) {
-            let parts = [property(properties["fontSize"]), property(properties["fontWeight"]).map(weightName), property(properties["letterSpacing"]).map { "Spacing \($0)" }, property(properties["lineHeight"]).map { "Line height \($0)" }, property(properties["fontFamily"])].compactMap { $0 }
+            let parts = [property(properties["fontSize"]).map { fontSizeLabel($0) }, property(properties["fontWeight"]).map(weightName), property(properties["letterSpacing"]).map { "Spacing \($0)" }, property(properties["lineHeight"]).map { "Line height \($0)" }, property(properties["fontFamily"])].compactMap { $0 }
             if !parts.isEmpty { return parts.joined(separator: " · ") }
         }
         if token.name.contains("weight") { return weightName(value) }
         if let match = TokenParser.matches(#"^var\((--[\w-]+)\)$|^\{([\w.-]+)\}$"#, token.value).first {
             let alias = (match[1].isEmpty ? match[2] : String(match[1].dropFirst(2))).replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: ".", with: " ").capitalized
             return value == token.value ? token.value : "\(alias) · \(value)"
+        }
+        if token.name.contains("font-size") || token.name.hasPrefix("--text-") && !token.name.contains("--line-height") {
+            return fontSizeLabel(value)
         }
         return value
     }
@@ -179,7 +188,9 @@ struct TokenBadge: View {
     let token: DesignToken
     var tokens: [DesignToken] = []
     var size: CGFloat = 48
+    var width: CGFloat? = nil
     var body: some View {
+        let badgeWidth = width ?? size
         let value = TokenPreview.resolved(token, tokens: tokens)
         let kind = token.kind.lowercased()
         let properties = TokenPreview.typography(token, tokens: tokens)
@@ -216,14 +227,14 @@ struct TokenBadge: View {
                 Text("Header").font(cleanFamily.isEmpty ? .system(size: fontSize, weight: fontWeight) : .custom(cleanFamily, size: fontSize).weight(fontWeight))
                     .fixedSize(horizontal: true, vertical: true)
                     .foregroundStyle(TokenPreview.typographyColor(token, tokens: tokens).map(Color.init(nsColor:)) ?? .white)
-                    .frame(width: size - 20, height: size, alignment: .leading)
+                    .frame(width: badgeWidth - 20, height: size, alignment: .leading)
                     .padding(.leading, 10)
-                    .frame(width: size, height: size, alignment: .leading)
+                    .frame(width: badgeWidth, height: size, alignment: .leading)
                     .clipped()
             } else {
                 RoundedRectangle(cornerRadius: 5).fill(.white.opacity(0.14)).overlay(RoundedRectangle(cornerRadius: 5).stroke(.white.opacity(0.85),lineWidth: 1)).padding(size * 0.18)
             }
-        }.frame(width: size,height: size).clipShape(RoundedRectangle(cornerRadius: size * 0.19))
+        }.frame(width: badgeWidth,height: size).clipShape(RoundedRectangle(cornerRadius: size * 0.19))
             .help("\(token.name): \(TokenPreview.definition(token,tokens: tokens)) · \(token.source)")
     }
 }

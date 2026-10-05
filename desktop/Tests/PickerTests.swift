@@ -152,6 +152,9 @@ final class ColorCacheProtocol: URLProtocol {
         precondition(ranked.matches.first?.name == "--text")
         ranked.query = "--text"
         precondition(ranked.matches.map(\.name) == ["--text", "--text-body", "--text-h3"])
+        ranked.tokens = TokenParser.parse(":root { --text-cui-base: 1rem; --text-cui-base--line-height: 1.5rem; --text-cui-lg: 1.25rem; --text-cui-lg--line-height: 1.75rem; --text-cui-sm: 0.75rem; }", source: "theme.css")
+        ranked.query = "text"
+        precondition(ranked.matches.map(\.name) == ["--text-cui-base", "--text-cui-lg", "--text-cui-sm", "--text-cui-base--line-height", "--text-cui-lg--line-height"])
         ranked.query = ""
         precondition(ranked.matches == ranked.tokens)
         // The default tab keeps existing imports; added tabs display only their chosen file.
@@ -382,6 +385,13 @@ final class ColorCacheProtocol: URLProtocol {
 
         let textToken = DesignToken(name: "--text-heading", value: #"{"fontSize":"24px","fontWeight":600}"#, kind: "Typography", source: "tokens.json")
         precondition(TokenPreview.definition(textToken,tokens: []) == "24px · Semibold")
+        precondition(TokenPreview.fontSizeLabel("0.875rem") == "0.875rem (14px)")
+        precondition(TokenPreview.fontSizeLabel(".75rem") == ".75rem (12px)")
+        precondition(TokenPreview.fontSizeLabel("24px") == "24px")
+        let remText = DesignToken(name: "--text-cui-sm", value: ".75rem", kind: "Dimension", source: "theme.css")
+        let remLineHeight = DesignToken(name: "--text-cui-sm--line-height", value: "1.25rem", kind: "Dimension", source: "theme.css")
+        precondition(TokenPreview.pickerDefinition(remText, tokens: []) == ".75rem (12px)")
+        precondition(TokenPreview.pickerDefinition(remLineHeight, tokens: []) == "1.25rem")
         let fullText = DesignToken(name: "--text-h3", value: #"{"fontSize":"24px","fontWeight":600,"letterSpacing":"0.2px","lineHeight":"32px","fontFamily":["Inter","sans-serif"]}"#, kind: "Typography", source: "tokens.json")
         precondition(TokenPreview.pickerDefinition(fullText, tokens: []) == "24px · Semibold · Spacing 0.2px · Line height 32px · Inter, sans-serif")
         let styledText = DesignToken(name: "--text-primary", value: #"{"fontSize":"88px","fontWeight":700,"color":"{brand.red}"}"#, kind: "Typography", source: "tokens.json")

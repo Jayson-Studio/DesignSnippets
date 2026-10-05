@@ -95,6 +95,9 @@ import CoreText
         ]
         try render(PickerView(state: picker), name: "token-picker-text-styles")
         picker.query = ""
+        picker.tokens = TokenParser.parse(":root { --text-cui-base: 1rem; --text-cui-base--line-height: 1.5rem; --text-cui-lg: 1.25rem; --text-cui-lg--line-height: 1.75rem; --text-cui-sm: 0.875rem; }", source: "theme.css")
+        try render(PickerView(state: picker), name: "token-picker-rem-text") { picker.appendQuery("text") }
+        picker.query = ""
         picker.tabDefinitions = [PickerTab(title: "Components", path: "components.json"), PickerTab(title: "Icons", path: "icons.json")]
         picker.tokens += [DesignToken(name: "components.button", value: "Button", kind: "Class", source: "components.json", section: "Components")]
         try render(PickerView(state: picker), name: "token-picker-components") { picker.selectSection("Components") }

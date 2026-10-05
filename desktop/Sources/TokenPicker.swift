@@ -199,7 +199,10 @@ enum TabCreationStep: Equatable { case title, source }
         let needle = normalized(query)
         func rank(_ token: DesignToken) -> Int {
             let name = normalized(token.name)
-            return name == needle ? 0 : name.hasPrefix(needle) ? 1 : 2
+            if name == needle { return 0 }
+            let isCompanion = name.hasPrefix("text-") && name.contains("--line-height")
+            if name.hasPrefix(needle) { return isCompanion ? 2 : 1 }
+            return isCompanion ? 4 : 3
         }
         return candidates.enumerated().filter { $0.element.name.localizedCaseInsensitiveContains(query) }
             .sorted { left, right in
@@ -400,7 +403,8 @@ struct PickerView: View {
                     }.frame(maxWidth: .infinity).frame(height: 64)
                 } else {
                     HStack(spacing: 12) {
-                        TokenBadge(token: token, tokens: state.resolutionTokens, size: TokenPreview.isTextStyle(token) ? 100 : 36)
+                        TokenBadge(token: token, tokens: state.resolutionTokens, size: 36,
+                                   width: TokenPreview.isTextStyle(token) ? 100 : nil)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(token.name).font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(1)
                             Text(TokenPreview.pickerDefinition(token, tokens: state.resolutionTokens))
