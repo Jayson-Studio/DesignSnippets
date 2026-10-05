@@ -31,6 +31,10 @@ struct PreviewSandbox: View {
                 guard let picker, let index = picker.matches.firstIndex(of: token) else { return }
                 picker.selected = index
             }
+            picker.openDefinition = { [weak picker, weak model] token in
+                guard let picker else { return }
+                model?.openDefinition(token, editor: picker.preferredEditor)
+            }
             picker.addTab = { [weak picker, weak model] title, path in
                 guard let picker, let model else { return }
                 model.addPickerTab(title: title, path: path) { result in

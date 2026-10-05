@@ -100,6 +100,131 @@ struct GitHubClient {
         guard paths.count <= 20 else { throw SemanticError("Choose up to 20 token files per project.") }
         return paths
     }
+    func fileText(_ repo: Repository, path: String) async throws -> String {
+        struct File: Decodable { let type: String; let size: Int; let content: String?; let encoding: String? }
+        let path = try Self.filePaths([path])[0]
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        let encodedPath = path.components(separatedBy: "/").map { $0.addingPercentEncoding(withAllowedCharacters: allowed) ?? $0 }.joined(separator: "/")
+        let branch = repo.default_branch.addingPercentEncoding(withAllowedCharacters: allowed) ?? repo.default_branch
+        let file: File = try await request("/repos/\(repo.full_name)/contents/\(encodedPath)?ref=\(branch)")
+        guard file.type == "file", file.size <= 1_000_000, file.encoding == "base64",
+              let content = file.content, let data = Data(base64Encoded: content, options: .ignoreUnknownCharacters),
+              let text = String(data: data, encoding: .utf8) else {
+            throw SemanticError("Could not read \(path) as a text file.")
+        }
+        return text
+    }
+    static func definitionLine(_ token: DesignToken, in text: String) -> Int? {
+        let name: String
+        if !token.name.hasPrefix("--"), let alias = TokenParser.matches(#"^var\((--[\w-]+)\)$"#, token.value).first?[1] { name = alias }
+        else { name = token.name }
+        if token.source.lowercased().hasSuffix(".json") {
+            return jsonDefinitionLine(name, in: text)
+        }
+        let searchable: String
+        let comments = try? NSRegularExpression(pattern: #"/\*[\s\S]*?\*/"#)
+        let sanitized = NSMutableString(string: text)
+        for match in (comments?.matches(in: text, range: NSRange(location: 0, length: (text as NSString).length)) ?? []).reversed() {
+            let comment = (text as NSString).substring(with: match.range)
+            sanitized.replaceCharacters(in: match.range, with: String(comment.map { $0 == "\n" ? "\n" : " " }))
+        }
+        searchable = sanitized as String
+        let escaped = NSRegularExpression.escapedPattern(for: name)
+        let pattern: String
+        if name.hasPrefix("--") { pattern = "(?m)(?:^|[;{])\\s*(" + escaped + ")\\s*:" }
+        else if name.hasPrefix(".") { pattern = "(?m)(" + escaped + ")(?=[\\s:{.#>])" }
+        else {
+            let key = NSRegularExpression.escapedPattern(for: String(name.split(separator: ".").last ?? ""))
+            pattern = "(\"" + key + "\")\\s*:"
+        }
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: searchable, range: NSRange(location: 0, length: (searchable as NSString).length)) else { return nil }
+        let preceding = (searchable as NSString).substring(to: match.range(at: 1).location)
+        return preceding.reduce(1) { $0 + ($1 == "\n" ? 1 : 0) }
+    }
+    private static func jsonDefinitionLine(_ name: String, in text: String) -> Int? {
+        let units = Array(text.utf16)
+        var position = 0
+        var line = 1
+        var locations: [String: [Int]] = [:]
+        func advance() {
+            if units[position] == 10 { line += 1 }
+            position += 1
+        }
+        func whitespace() {
+            while position < units.count && [9, 10, 13, 32].contains(units[position]) { advance() }
+        }
+        func readString() -> String? {
+            guard position < units.count, units[position] == 34 else { return nil }
+            let start = position
+            advance()
+            while position < units.count {
+                let character = units[position]
+                advance()
+                if character == 92 {
+                    if position < units.count { advance() }
+                } else if character == 34 {
+                    let literal = String(decoding: units[start..<position], as: UTF16.self)
+                    guard let data = literal.data(using: .utf8) else { return nil }
+                    return try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed) as? String
+                }
+            }
+            return nil
+        }
+        func walk(_ path: [String]) {
+            whitespace()
+            guard position < units.count else { return }
+            if units[position] == 123 {
+                advance()
+                while position < units.count {
+                    whitespace()
+                    if position < units.count, units[position] == 125 { advance(); return }
+                    let keyLine = line
+                    guard let key = readString() else { return }
+                    whitespace()
+                    guard position < units.count, units[position] == 58 else { return }
+                    advance()
+                    let child = path + [key]
+                    if !key.hasPrefix("$"), key != "type" { locations[child.joined(separator: "."), default: []].append(keyLine) }
+                    walk(child)
+                    whitespace()
+                    if position < units.count, units[position] == 44 { advance() }
+                    else if position < units.count, units[position] == 125 { advance(); return }
+                    else { return }
+                }
+            } else if units[position] == 91 {
+                advance()
+                while position < units.count {
+                    whitespace()
+                    if position < units.count, units[position] == 93 { advance(); return }
+                    walk(path)
+                    whitespace()
+                    if position < units.count, units[position] == 44 { advance() }
+                    else if position < units.count, units[position] == 93 { advance(); return }
+                    else { return }
+                }
+            } else if units[position] == 34 { _ = readString() }
+            else {
+                while position < units.count && ![44, 93, 125].contains(units[position]) { advance() }
+            }
+        }
+        walk([])
+        guard let lines = locations[name], lines.count == 1 else { return nil }
+        return lines[0]
+    }
+    static func definitionURL(_ repo: Repository, path: String, line: Int? = nil, editor: String = "GitHub.dev") -> URL? {
+        let names = repo.full_name.split(separator: "/")
+        guard names.count == 2, let path = try? filePaths([path])[0] else { return nil }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        guard ["GitHub.dev", "GitHub"].contains(editor) else { return nil }
+        let parts = names.map(String.init) + [editor == "GitHub.dev" ? "blob" : "edit", repo.default_branch] + path.components(separatedBy: "/")
+        var url = URLComponents()
+        url.scheme = "https"
+        url.host = editor == "GitHub.dev" ? "github.dev" : "github.com"
+        url.percentEncodedPath = "/" + parts.map { $0.addingPercentEncoding(withAllowedCharacters: allowed) ?? $0 }.joined(separator: "/")
+        if editor == "GitHub.dev", let line, line > 0 { url.fragment = "L\(line)" }
+        return url.url
+    }
     func index(_ repo: Repository, paths input: [String], progress: @escaping @Sendable (String) async -> Void) async throws -> TokenIndex {
         struct Commit: Decodable { let sha: String }
         struct File: Decodable { let type: String; let size: Int; let content: String?; let encoding: String? }

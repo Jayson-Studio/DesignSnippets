@@ -63,7 +63,8 @@ final class MockProtocol: URLProtocol {
             return (200, try data(["type": "file", "size": 40, "encoding": "base64", "content": Data(":root { --border-default: #eeeeee; }".utf8).base64EncodedString()]))
         }
         let index = try await client.index(repos[0], paths: ["src/styles/theme.css"], progress: { _ in })
-        try check(index.tokens.first?.name == "--border-default" && index.revision == "revision" && index.sourceFiles == ["src/styles/theme.css"], "Direct file indexing and persisted selection")
+        try check(index.tokens.first?.name == "--border-default" && index.revision == "revision"
+                  && index.sourceFiles == ["src/styles/theme.css"], "Direct file indexing and persisted selection")
         MockProtocol.handler = { request in
             switch request.url!.path {
             case let path where path.contains("/commits/"):
