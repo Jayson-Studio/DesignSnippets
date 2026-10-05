@@ -65,6 +65,7 @@ private struct MenuWindowContent: View {
         menuPanel.level = .popUpMenu
         menuPanel.isFloatingPanel = true
         menuPanel.hidesOnDeactivate = false
+        menuPanel.canHide = false
         menuPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         let host = NSHostingView(rootView: MenuWindowContent(model: model, onDismiss: { [weak self] in
             self?.closePanel()
