@@ -55,12 +55,8 @@ import SwiftUI
             return
         }
         Task {
-            let line: Int?
-            if let savedLine = definition.sourceLine { line = savedLine }
-            else {
-                let source = try? await GitHubClient(token: token).fileText(repository, path: definition.source)
-                line = source.flatMap { GitHubClient.definitionLine(definition, in: $0) }
-            }
+            let source = try? await GitHubClient(token: token).fileText(repository, path: definition.source)
+            let line = source.flatMap { GitHubClient.definitionLine(definition, in: $0) }
             guard let url = GitHubClient.definitionURL(repository, path: definition.source, line: line, editor: editor) else {
                 error = "Could not form an editor link for \(definition.source)."
                 return

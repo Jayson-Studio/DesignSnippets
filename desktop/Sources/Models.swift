@@ -8,7 +8,6 @@ struct DesignToken: Codable, Identifiable, Equatable {
     let source: String
     var typography: [String: String]? = nil
     var section: String? = nil
-    var sourceLine: Int? = nil
 
     var pickerSection: String {
         if let section, !section.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return section }
@@ -74,8 +73,7 @@ enum TokenParser {
             guard let (variablePrefix, utilityPrefix) = namespaces.first(where: { token.name.hasPrefix($0.0) }),
                   token.name.count > variablePrefix.count else { return nil }
             return DesignToken(name: utilityPrefix + token.name.dropFirst(variablePrefix.count),
-                               value: "var(\(token.name))", kind: "Color", source: token.source,
-                               sourceLine: token.sourceLine)
+                               value: "var(\(token.name))", kind: "Color", source: token.source)
         }
         return unique(aliases + tokens)
     }

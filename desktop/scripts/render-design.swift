@@ -78,7 +78,7 @@ import CoreText
         picker.tabDefinitions = [PickerTab(title: "Components", path: "components.json"), PickerTab(title: "Icons", path: "icons.json")]
         picker.toggleSettings()
         try render(PickerView(state: picker), name: "token-picker-settings-general")
-        picker.settingsSection = "Icons"
+        picker.settingsSection = .tokens("Icons")
         try render(PickerView(state: picker), name: "token-picker-settings-icons")
         picker.toggleSettings()
         picker.tabDefinitions = []

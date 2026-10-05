@@ -32,6 +32,13 @@ enum PickerSortOrder: String, CaseIterable {
     case name = "Name"
     case fontSize = "Font size"
 }
+enum PickerSettingsSection: Hashable {
+    case general
+    case tokens(String)
+    var title: String {
+        switch self { case .general: "General"; case .tokens(let title): title == "General" ? "General tab" : title }
+    }
+}
 
 @MainActor final class PickerState: ObservableObject {
     static let maxTabTitleLength = 25
@@ -40,7 +47,7 @@ enum PickerSortOrder: String, CaseIterable {
     @Published var selected = 0
     @Published var hoveredTokenID: String? = nil
     @Published var showingSettings = false
-    @Published var settingsSection = "General"
+    @Published var settingsSection: PickerSettingsSection = .general
     @Published var preferredEditor = "GitHub.dev"
     @Published var sortOrders: [String: PickerSortOrder] = [:]
     var openDefinition: ((DesignToken) -> Void)?
@@ -56,7 +63,7 @@ enum PickerSortOrder: String, CaseIterable {
     func toggleSettings() {
         showingSettings.toggle()
         if showingSettings {
-            settingsSection = "General"
+            settingsSection = .general
             hoveredTokenID = nil
             beginSettings?()
         } else { endSettings?() }
@@ -169,7 +176,7 @@ enum PickerSortOrder: String, CaseIterable {
         tokens = index?.displayTokens ?? []
         referenceTokens = index?.referenceTokens ?? []
         tabDefinitions = index?.pickerTabs ?? []
-        if !(["General"] + sections).contains(settingsSection) { settingsSection = "General" }
+        if case .tokens(let title) = settingsSection, !sections.contains(title) { settingsSection = .general }
         repositoryID = index?.repository.id
         sortOrders = Dictionary(uniqueKeysWithValues: sections.compactMap { section in
             guard let repositoryID else { return nil }
@@ -241,6 +248,7 @@ enum PickerSortOrder: String, CaseIterable {
         func sort(_ candidates: [DesignToken]) -> [DesignToken] {
             guard sortOrder(for: activeSection) == .fontSize else { return candidates }
             func size(_ token: DesignToken) -> Double? {
+                guard TokenPreview.isTextStyle(token), !token.name.contains("--line-height") else { return nil }
                 let value = TokenPreview.property(TokenPreview.typography(token, tokens: resolutionTokens)?["fontSize"])
                     ?? TokenPreview.resolved(token, tokens: resolutionTokens)
                 return TokenPreview.radius(value)
@@ -341,9 +349,9 @@ struct PickerView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
                         if state.showingSettings {
-                            ForEach(["General"] + state.sections.filter { $0 != "New tab" }, id: \.self) { section in
+                            ForEach([PickerSettingsSection.general] + state.sections.filter { $0 != "New tab" }.map(PickerSettingsSection.tokens), id: \.self) { section in
                                 Button { state.settingsSection = section } label: {
-                                    Text(section).font(Protegia.font(12, bold: true)).fixedSize()
+                                    Text(section.title).font(Protegia.font(12, bold: true)).fixedSize()
                                         .padding(.horizontal, 12).padding(.vertical, 10)
                                         .background(state.settingsSection == section ? Protegia.level2 : .clear, in: Capsule())
                                 }.buttonStyle(.plain).id(section)
@@ -400,6 +408,7 @@ struct PickerView: View {
                         .disabled(state.creatingTab)
             }.padding(14).opacity(state.creatingTab ? 0.45 : 1)
                 .disabled(state.creatingTab)
+                .background { if allowsDragging { PickerDragHeader(state: state) } }
         }.frame(width: PickerLayout.width, height: PickerLayout.height).background(Protegia.base)
         .foregroundStyle(Protegia.text).font(Protegia.font(12)).tint(Protegia.accent).preferredColorScheme(.dark)
         .onChange(of: state.creatingTab) { _, creating in
@@ -420,7 +429,7 @@ struct PickerView: View {
 
     private var settingsContent: some View {
         HStack(spacing: 10) {
-            if state.settingsSection == "General" {
+            if state.settingsSection == .general {
                 Text("Preferred editor")
                 Menu {
                     Button("GitHub.dev") { state.setPreferredEditor("GitHub.dev") }
@@ -430,9 +439,13 @@ struct PickerView: View {
                 Text("Sort By")
                 Menu {
                     ForEach(PickerSortOrder.allCases, id: \.self) { order in
-                        Button(order.rawValue) { state.setSortOrder(order, for: state.settingsSection) }
+                        Button(order.rawValue) {
+                            if case .tokens(let title) = state.settingsSection { state.setSortOrder(order, for: title) }
+                        }
                     }
-                } label: { settingsChoice(state.sortOrder(for: state.settingsSection).rawValue) }
+                } label: {
+                    if case .tokens(let title) = state.settingsSection { settingsChoice(state.sortOrder(for: title).rawValue) }
+                }
             }
             Spacer(minLength: 0)
         }
@@ -504,14 +517,20 @@ struct PickerView: View {
     }
 
     private func entry(_ token: DesignToken, index: Int, grid: Bool) -> some View {
-        Button { state.choose?(token) } label: {
-            Group {
-                if grid {
+        Group {
+            if grid {
+                Button { state.choose?(token) } label: {
                     VStack(spacing: 6) {
                         TokenBadge(token: token, tokens: state.resolutionTokens, size: 32)
                         Text(token.name).font(Protegia.font(9)).lineLimit(1)
                     }.frame(maxWidth: .infinity).frame(height: 64)
-                } else {
+                        .background(index == state.selected ? Protegia.level2 : Protegia.level1,
+                                    in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel(token.name)
+            } else {
+                HStack(spacing: 0) {
+                    Button { state.choose?(token) } label: {
                     HStack(spacing: 12) {
                         TokenBadge(token: token, tokens: state.resolutionTokens, size: 36,
                                    width: TokenPreview.isTextStyle(token) ? 100 : nil)
@@ -521,25 +540,32 @@ struct PickerView: View {
                                 .font(Protegia.font(11)).foregroundStyle(Protegia.tertiary).lineLimit(2)
                         }
                         Spacer(minLength: 6)
-                        Text(index == state.selected && state.hoveredTokenID != token.id ? "↵" : "").font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(Protegia.secondary).frame(width: 15)
-                    }.padding(10)
+                    }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityLabel(token.name)
+                    Button {
+                        if state.hoveredTokenID == token.id { state.openDefinition?(token) }
+                        else { state.choose?(token) }
+                    } label: {
+                        Group {
+                            if state.hoveredTokenID == token.id && state.openDefinition != nil {
+                                FileInputIcon().stroke(Protegia.secondary,
+                                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                                    .frame(width: 20, height: 20)
+                            } else {
+                                Text(index == state.selected ? "↵" : "")
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .foregroundStyle(Protegia.secondary)
+                            }
+                        }.frame(width: 34, height: 56)
+                    }.buttonStyle(.plain).padding(.trailing, 4)
+                        .accessibilityLabel(state.hoveredTokenID == token.id ? "Open \(token.name) in code editor" : token.name)
+                        .help(state.hoveredTokenID == token.id ? "Open definition in \(state.preferredEditor)" : "\(token.name): \(token.value)")
                 }
-            }.frame(maxWidth: .infinity, alignment: .leading)
                 .background(index == state.selected ? Protegia.level2 : Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
                 .contentShape(Rectangle())
-        }.buttonStyle(.plain).id(token.id)
-            .overlay(alignment: .trailing) {
-                if !grid && state.hoveredTokenID == token.id && state.openDefinition != nil {
-                    Button { state.openDefinition?(token) } label: {
-                        FileInputIcon().stroke(Protegia.secondary, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                            .frame(width: 20, height: 20).frame(width: 34, height: 34)
-                    }.buttonStyle(.plain).padding(.trailing, 4)
-                        .accessibilityLabel("Open \(token.name) in code editor")
-                        .help("Open definition in \(state.preferredEditor)")
-                }
             }
-            .accessibilityLabel(token.name)
+        }.id(token.id)
             .accessibilityAddTraits(index == state.selected ? .isSelected : [])
             .help("\(token.name): \(token.value)")
             .onContinuousHover { phase in
