@@ -321,6 +321,7 @@ struct PickerView: View {
                 .overlay { if allowsDragging { PickerDragHeader(state: state) } }
             if let openError = state.openError, !state.showingSettings {
                 Text(openError).font(Protegia.font(11)).foregroundStyle(Protegia.destructive)
+                    .lineLimit(2).truncationMode(.tail).help(openError)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10).background(Protegia.destructive.opacity(0.1), in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
                     .padding(.horizontal, 14).padding(.bottom, 8)
@@ -815,6 +816,7 @@ struct PickerDismissalGate {
     private var notification: NSObjectProtocol?
     private var canInsertBeforeSettings = false
     private var returningToOwner = false
+    private var settingsReturnToken = UUID()
     private let positions = PickerPositionStore()
     private var ownerBundle = ""
     private var positionDisplay: String?
@@ -844,13 +846,19 @@ struct PickerDismissalGate {
         }
         state.returnFromSettings = { [weak self] in
             guard let self else { return }
-            self.state.canInsert = self.canInsertBeforeSettings
+            self.state.canInsert = false
             self.panel?.acceptsInput = false
-            guard let owner = NSRunningApplication(processIdentifier: self.pid) else { return }
+            guard let owner = NSRunningApplication(processIdentifier: self.pid) else { self.dismiss(); return }
             self.returningToOwner = true
-            _ = owner.activate(options: [])
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-                self?.returningToOwner = false
+            let returnToken = UUID()
+            self.settingsReturnToken = returnToken
+            guard owner.activate(options: []) else { self.dismiss(); return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                guard let self, self.settingsReturnToken == returnToken, self.panel?.isVisible == true else { return }
+                self.returningToOwner = false
+                if NSWorkspace.shared.frontmostApplication?.processIdentifier == self.pid {
+                    self.state.canInsert = self.canInsertBeforeSettings
+                } else { self.dismiss() }
             }
         }
         state.endSettings = { [weak self] in
@@ -1328,6 +1336,7 @@ struct PickerDismissalGate {
         state.hoveredTokenID = nil
         state.openError = nil
         returningToOwner = false
+        settingsReturnToken = UUID()
         pendingOutsideDismiss?.cancel(); pendingOutsideDismiss = nil
         dismissalGate.cancel()
         panel?.acceptsInput = false

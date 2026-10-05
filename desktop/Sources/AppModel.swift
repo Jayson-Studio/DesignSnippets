@@ -84,6 +84,8 @@ enum LocalDefinition {
     private var refreshAfterGitHub = false
     private var token: String?
     private var displayedTokensByRepository: [Int: [DesignToken]] = [:]
+    var chooseLocalCheckoutOverride: ((String?) -> String?)?
+    var openEditorOverride: ((PreferredEditor, URL, Int, String) throws -> Void)?
     private let cacheURL: URL
     var activeIndex: TokenIndex? { indices.first { $0.repository.id == activeID } }
     var tokens: [DesignToken] {
@@ -99,6 +101,7 @@ enum LocalDefinition {
             error = "Connect a GitHub project before choosing a local checkout."
             return nil
         }
+        if let chooseLocalCheckoutOverride { return chooseLocalCheckoutOverride(source) }
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -148,6 +151,10 @@ enum LocalDefinition {
         }
     }
     private func launchEditor(_ editor: PreferredEditor, file: URL, line: Int, checkout: String) throws {
+        if let openEditorOverride {
+            try openEditorOverride(editor, file, line, checkout)
+            return
+        }
         if editor == .codex || editor == .claude {
             let bundleID = editor == .codex ? "com.openai.codex" : "com.anthropic.claudefordesktop"
             let appNames = editor == .codex ? ["Codex", "ChatGPT"] : ["Claude"]
