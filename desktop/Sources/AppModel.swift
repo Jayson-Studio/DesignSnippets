@@ -9,7 +9,9 @@ import SwiftUI
     @Published var selectedRepository: Repository? = nil
     @Published var tokenFilePaths = "src/styles/theme.css"
     @Published var repositories: [Repository] = []
-    @Published var indices: [TokenIndex] = []
+    @Published var indices: [TokenIndex] = [] {
+        didSet { displayedTokensByRepository.removeAll() }
+    }
     @Published var activeID: Int? = nil
     @Published var deviceCode: DeviceCode? = nil
     @Published var updatesConfigured = false
@@ -36,9 +38,16 @@ import SwiftUI
     private var task: Task<Void, Never>?
     private var refreshAfterGitHub = false
     private var token: String?
+    private var displayedTokensByRepository: [Int: [DesignToken]] = [:]
     private let cacheURL: URL
     var activeIndex: TokenIndex? { indices.first { $0.repository.id == activeID } }
-    var tokens: [DesignToken] { activeIndex?.tokens ?? [] }
+    var tokens: [DesignToken] {
+        guard let index = activeIndex else { return [] }
+        if let cached = displayedTokensByRepository[index.repository.id] { return cached }
+        let displayed = index.displayTokens
+        displayedTokensByRepository[index.repository.id] = displayed
+        return displayed
+    }
     var resolutionTokens: [DesignToken] { tokens + (activeIndex?.referenceTokens ?? []) }
     var needsColorRefresh: Bool {
         guard let index = activeIndex, index.repository.id != 0, index.colorReferencesScanned != true else { return false }

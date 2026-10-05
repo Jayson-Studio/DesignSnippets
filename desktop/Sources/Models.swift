@@ -51,6 +51,9 @@ struct TokenIndex: Codable {
     var pickerTabs: [PickerTab]? = nil
     var referenceTokens: [DesignToken]? = nil
     var colorReferencesScanned: Bool? = nil
+    // Tailwind utility names are derived at display time so existing cached projects
+    // gain them without requiring a new GitHub import.
+    var displayTokens: [DesignToken] { TokenParser.withUtilityAliases(tokens) }
 }
 struct SemanticError: LocalizedError {
     let message: String
@@ -59,6 +62,21 @@ struct SemanticError: LocalizedError {
 }
 
 enum TokenParser {
+    static func withUtilityAliases(_ tokens: [DesignToken]) -> [DesignToken] {
+        let namespaces = [
+            ("--background-color-", "bg-"),
+            ("--text-color-", "text-"),
+            ("--border-color-", "border-"),
+            ("--ring-color-", "ring-")
+        ]
+        let aliases = tokens.compactMap { token -> DesignToken? in
+            guard let (variablePrefix, utilityPrefix) = namespaces.first(where: { token.name.hasPrefix($0.0) }),
+                  token.name.count > variablePrefix.count else { return nil }
+            return DesignToken(name: utilityPrefix + token.name.dropFirst(variablePrefix.count),
+                               value: "var(\(token.name))", kind: "Color", source: token.source)
+        }
+        return unique(aliases + tokens)
+    }
     static func matches(_ pattern: String, _ text: String) -> [[String]] {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
         let source = text as NSString
