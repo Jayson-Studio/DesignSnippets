@@ -189,6 +189,12 @@ final class ColorCacheProtocol: URLProtocol {
         precondition(reopenedSettings.sortOrder(for: "Foundations") == .fontSize)
         precondition(reopenedSettings.sortOrder(for: "Components") == .fontSize)
         precondition(reopenedSettings.sortOrder(for: "General") == .fontSize)
+        settings.backFromSettings()
+        precondition(!settings.showingSettings)
+        precondition(settings.settingsSection == .general)
+        precondition(settings.activeSection == "Foundations")
+        settings.toggleSettings()
+        precondition(settings.showingSettings)
         settings.toggleSettings()
         precondition(!settings.showingSettings)
         let sourceText = """

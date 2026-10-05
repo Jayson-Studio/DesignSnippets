@@ -94,7 +94,7 @@ enum LocalDefinition {
         return displayed
     }
     var resolutionTokens: [DesignToken] { tokens + (activeIndex?.referenceTokens ?? []) }
-    func chooseLocalCheckout() -> String? {
+    func chooseLocalCheckout(for source: String? = nil) -> String? {
         guard let repository = activeIndex?.repository, repository.id != 0 else {
             error = "Connect a GitHub project before choosing a local checkout."
             return nil
@@ -103,33 +103,46 @@ enum LocalDefinition {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.message = "Choose the local checkout of \(repository.full_name)."
+        panel.message = source.map { "Choose the \(repository.full_name) folder containing \($0)." }
+            ?? "Choose the local folder for \(repository.full_name)."
         panel.prompt = "Use folder"
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return url.resolvingSymlinksInPath().standardizedFileURL.path
     }
-    func openDefinition(_ definition: DesignToken, editor: String = PreferredEditor.vscode.rawValue) {
+    @discardableResult func openDefinition(_ definition: DesignToken, editor: String = PreferredEditor.vscode.rawValue) -> String? {
+        error = nil
         guard let repository = activeIndex?.repository, repository.id != 0 else {
             error = "Connect a GitHub project to open token definitions."
-            return
+            return nil
         }
-        guard let chosen = PreferredEditor(rawValue: editor) else { return }
-        guard let checkout = UserDefaults.standard.string(forKey: "pickerCheckout:\(repository.id)"), !checkout.isEmpty else {
-            error = "Choose a local checkout in General settings to open definitions in \(chosen.rawValue)."
-            return
+        guard let chosen = PreferredEditor(rawValue: editor) else { return nil }
+        let checkoutKey = "pickerCheckout:\(repository.id)"
+        var checkout = UserDefaults.standard.string(forKey: checkoutKey) ?? ""
+        var file = checkout.isEmpty ? nil : LocalDefinition.fileURL(checkout: checkout, source: definition.source)
+        if file == nil {
+            guard let selected = chooseLocalCheckout(for: definition.source) else {
+                error = "Choose the local \(repository.full_name) folder to open \(definition.name) in \(chosen.rawValue)."
+                return nil
+            }
+            checkout = selected
+            file = LocalDefinition.fileURL(checkout: checkout, source: definition.source)
+            guard file != nil else {
+                error = "\(definition.source) was not found in that folder. Choose the project root containing this file."
+                return nil
+            }
+            UserDefaults.standard.set(checkout, forKey: checkoutKey)
         }
-        guard let file = LocalDefinition.fileURL(checkout: checkout, source: definition.source) else {
-            error = "\(definition.source) was not found in the selected local checkout. Choose the matching folder in General settings."
-            return
-        }
+        guard let file else { return nil }
         guard let line = LocalDefinition.line(definition, at: file) else {
             error = "Could not locate \(definition.name) in the local file. Refresh the project or choose the matching checkout."
-            return
+            return nil
         }
         do {
             try launchEditor(chosen, file: file, line: line, checkout: checkout)
+            return checkout
         } catch {
             self.error = error.localizedDescription
+            return nil
         }
     }
     private func launchEditor(_ editor: PreferredEditor, file: URL, line: Int, checkout: String) throws {
