@@ -2,6 +2,14 @@ import AppKit
 import SwiftUI
 
 enum TokenPreview {
+    static func isTextStyle(_ token: DesignToken) -> Bool {
+        token.kind.lowercased() != "color" && (token.kind.lowercased() == "typography" || token.name.contains("font") || token.name.contains("text"))
+    }
+    static func typographyColor(_ token: DesignToken, tokens: [DesignToken]) -> NSColor? {
+        guard let properties = typography(token, tokens: tokens),
+              let value = property(properties["color"] ?? properties["textColor"] ?? properties["foregroundColor"]) else { return nil }
+        return color(value)
+    }
     static func fontWeight(_ value: String) -> Font.Weight {
         switch value.lowercased().replacingOccurrences(of: "-", with: "").replacingOccurrences(of: " ", with: "") {
         case "100", "thin": return .ultraLight
@@ -170,7 +178,7 @@ struct TokenBadge: View {
         let kind = token.kind.lowercased()
         let properties = TokenPreview.typography(token, tokens: tokens)
         let radius = TokenPreview.radius(value)
-        let isText = kind != "color" && (kind == "typography" || token.name.contains("font") || token.name.contains("text"))
+        let isText = TokenPreview.isTextStyle(token)
         let color = TokenPreview.colorPresentation(token, tokens: tokens)
         ZStack(alignment: .topLeading) {
             if kind != "color" { Color.white.opacity(0.19) }
@@ -199,10 +207,13 @@ struct TokenBadge: View {
                 let fontSizeValue = TokenPreview.property(properties?["fontSize"]) ?? (token.name.contains("size") || token.name.hasPrefix("--text-") ? value : "16px")
                 let fontSize = max(1, TokenPreview.radius(fontSizeValue) ?? Double(fontSizeValue) ?? 16)
                 let fontWeight = TokenPreview.fontWeight(weight)
-                Text("Heading").font(cleanFamily.isEmpty ? .system(size: fontSize, weight: fontWeight) : .custom(cleanFamily, size: fontSize).weight(fontWeight))
-                    .fixedSize(horizontal: true, vertical: true).foregroundStyle(.white)
-                    .frame(width: size - 12, height: size - 12, alignment: .topLeading)
-                    .clipped().padding(6)
+                Text("Header").font(cleanFamily.isEmpty ? .system(size: fontSize, weight: fontWeight) : .custom(cleanFamily, size: fontSize).weight(fontWeight))
+                    .fixedSize(horizontal: true, vertical: true)
+                    .foregroundStyle(TokenPreview.typographyColor(token, tokens: tokens).map(Color.init(nsColor:)) ?? .white)
+                    .frame(width: size - 20, height: size, alignment: .leading)
+                    .padding(.leading, 10)
+                    .frame(width: size, height: size, alignment: .leading)
+                    .clipped()
             } else {
                 RoundedRectangle(cornerRadius: 5).fill(.white.opacity(0.14)).overlay(RoundedRectangle(cornerRadius: 5).stroke(.white.opacity(0.85),lineWidth: 1)).padding(size * 0.18)
             }

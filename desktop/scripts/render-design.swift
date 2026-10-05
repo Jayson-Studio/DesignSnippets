@@ -89,6 +89,12 @@ import CoreText
         picker.tokens = [DesignToken(name: "--carbon-400", value: "rgb(90, 90, 96)", kind: "Color", source: "theme.css"), DesignToken(name: "--color-text-accent", value: "var(--carbon-400)", kind: "Color", source: "theme.css"), DesignToken(name: "--text-h3", value: #"{"fontSize":"24px","fontWeight":600,"letterSpacing":"0.2px","lineHeight":"32px","fontFamily":"Inter"}"#, kind: "Typography", source: "theme.css")]
         try render(PickerView(state: picker), name: "token-picker-ranked-text") { picker.appendQuery("text") }
         picker.query = ""
+        picker.tokens = [
+            DesignToken(name: "--text-cui-secondary", value: ##"{"fontSize":"24px","fontWeight":600,"color":"#ffffff"}"##, kind: "Typography", source: "theme.css"),
+            DesignToken(name: "--text-cui-primary", value: ##"{"fontSize":"88px","fontWeight":700,"color":"#ff7373"}"##, kind: "Typography", source: "theme.css")
+        ]
+        try render(PickerView(state: picker), name: "token-picker-text-styles")
+        picker.query = ""
         picker.tabDefinitions = [PickerTab(title: "Components", path: "components.json"), PickerTab(title: "Icons", path: "icons.json")]
         picker.tokens += [DesignToken(name: "components.button", value: "Button", kind: "Class", source: "components.json", section: "Components")]
         try render(PickerView(state: picker), name: "token-picker-components") { picker.selectSection("Components") }

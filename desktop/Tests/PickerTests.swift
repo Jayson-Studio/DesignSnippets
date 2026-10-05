@@ -384,13 +384,19 @@ final class ColorCacheProtocol: URLProtocol {
         precondition(TokenPreview.definition(textToken,tokens: []) == "24px · Semibold")
         let fullText = DesignToken(name: "--text-h3", value: #"{"fontSize":"24px","fontWeight":600,"letterSpacing":"0.2px","lineHeight":"32px","fontFamily":["Inter","sans-serif"]}"#, kind: "Typography", source: "tokens.json")
         precondition(TokenPreview.pickerDefinition(fullText, tokens: []) == "24px · Semibold · Spacing 0.2px · Line height 32px · Inter, sans-serif")
+        let styledText = DesignToken(name: "--text-primary", value: #"{"fontSize":"88px","fontWeight":700,"color":"{brand.red}"}"#, kind: "Typography", source: "tokens.json")
+        let brandRed = DesignToken(name: "brand.red", value: "#E83D4F", kind: "Color", source: "tokens.json")
+        precondition(TokenPreview.isTextStyle(styledText))
+        precondition(TokenPreview.typographyColor(styledText, tokens: [styledText, brandRed])?.usingColorSpace(.sRGB)?.redComponent == CGFloat(232.0 / 255.0))
+        precondition(!TokenPreview.isTextStyle(brandRed))
         let cssTypography = TokenParser.parse("""
-        :root { --text-h3: var(--text-h3-sm); --text-h3-sm: 24px; --font-family-body: 'Lato', sans-serif; --font-weight-bold: 700; }
-        @layer base { h3 { font-family: var(--font-family-body); font-size: var(--text-h3); font-weight: var(--font-weight-bold); line-height: 1.5; } }
+        :root { --text-h3: var(--text-h3-sm); --text-h3-sm: 24px; --font-family-body: 'Lato', sans-serif; --font-weight-bold: 700; --heading-color: #e83d4f; }
+        @layer base { h3 { font-family: var(--font-family-body); font-size: var(--text-h3); font-weight: var(--font-weight-bold); line-height: 1.5; color: var(--heading-color); } }
         """, source: "theme.css")
         let heading = cssTypography.first { $0.name == "--text-h3" }!
         precondition(TokenPreview.pickerDefinition(heading, tokens: cssTypography) == "24px · Bold · Line height 1.5 · 'Lato', sans-serif")
         precondition(TokenPreview.property(TokenPreview.typography(heading, tokens: cssTypography)?["fontWeight"]) == "700")
+        precondition(TokenPreview.typographyColor(heading, tokens: cssTypography)?.usingColorSpace(.sRGB)?.redComponent == CGFloat(232.0 / 255.0))
         let ambiguous = TokenParser.parse(":root { --size: 24px; } h3 { font-size: var(--size); font-weight: 700; } p { font-size: var(--size); font-weight: 400; }", source: "theme.css")
         precondition(ambiguous.first?.typography?["fontWeight"] == nil)
         let dimensionToken = DesignToken(name: "--text-body", value: #"{"fontSize":{"value":16,"unit":"px"},"fontWeight":400}"#, kind: "Typography", source: "tokens.json")
