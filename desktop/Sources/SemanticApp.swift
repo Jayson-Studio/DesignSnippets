@@ -17,14 +17,20 @@ private struct MenuArrow: Shape {
     }
 }
 
+@MainActor private final class MenuWindowGeometry: ObservableObject {
+    @Published var arrowX: CGFloat = 210
+}
+
 private struct MenuWindowContent: View {
     let model: AppModel
+    @ObservedObject var geometry: MenuWindowGeometry
     let onDismiss: () -> Void
     let onTabChange: (String) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             MenuArrow().fill(Protegia.base).frame(width: 20, height: 10)
+                .offset(x: geometry.arrowX - 210)
             SemanticPanel(model: model, onDismiss: onDismiss, onTabChange: onTabChange)
                 .clipShape(RoundedRectangle(cornerRadius: 18))
                 .overlay(RoundedRectangle(cornerRadius: 18).stroke(Protegia.level2, lineWidth: 1))
@@ -41,6 +47,7 @@ private struct MenuWindowContent: View {
     private var picker: TokenPicker!
     private var updater: AppUpdater?
     private var menuHeight: CGFloat = 620
+    private let menuGeometry = MenuWindowGeometry()
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         installMainMenu()
@@ -67,7 +74,7 @@ private struct MenuWindowContent: View {
         menuPanel.hidesOnDeactivate = false
         menuPanel.canHide = false
         menuPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        let host = NSHostingView(rootView: MenuWindowContent(model: model, onDismiss: { [weak self] in
+        let host = NSHostingView(rootView: MenuWindowContent(model: model, geometry: menuGeometry, onDismiss: { [weak self] in
             self?.closePanel()
         }) { [weak self] tab in
             self?.resizeMenu(for: tab)
@@ -130,20 +137,22 @@ private struct MenuWindowContent: View {
     }
     @objc private func showPanel() {
         picker.dismiss()
-        positionMenu()
+        guard positionMenu() else { return }
         menuPanel.orderFrontRegardless()
         menuPanel.makeKey()
     }
-    private func positionMenu() {
-        guard let button = statusItem.button, let buttonWindow = button.window else { return }
+    @discardableResult private func positionMenu() -> Bool {
+        guard let button = statusItem.button, let buttonWindow = button.window else { return false }
         let anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
         let screen = buttonWindow.screen ?? NSScreen.screens.first(where: { $0.frame.contains(NSPoint(x: anchor.midX, y: anchor.midY)) }) ?? NSScreen.main
-        guard let screen else { return }
+        guard let screen else { return false }
         let visible = screen.visibleFrame
         let size = menuPanel.frame.size
         let x = min(max(anchor.midX - size.width / 2, visible.minX + 8), visible.maxX - size.width - 8)
         let y = min(max(anchor.minY - size.height - 2, visible.minY + 8), visible.maxY - size.height)
         menuPanel.setFrameOrigin(NSPoint(x: x, y: y))
+        menuGeometry.arrowX = min(max(anchor.midX - x, 20), size.width - 20)
+        return true
     }
     @objc private func checkForUpdates() { model.checkForUpdates?() }
     @objc private func quit() { NSApp.terminate(nil) }
