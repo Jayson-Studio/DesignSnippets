@@ -32,12 +32,16 @@ struct PreviewSandbox: View {
                 picker.selected = index
             }
             picker.openDefinition = { [weak picker, weak model] token in
-                guard let picker else { return }
-                model?.openDefinition(token, editor: picker.preferredEditor)
+                guard let picker, let model else { return }
+                if let checkout = model.openDefinition(token, editor: picker.preferredEditor) {
+                    picker.setCheckoutPath(checkout)
+                    picker.openError = nil
+                } else { picker.openError = model.error }
             }
             picker.chooseCheckout = { [weak picker, weak model] in
                 guard let picker, let path = model?.chooseLocalCheckout() else { return }
                 picker.setCheckoutPath(path)
+                picker.openError = nil
             }
             picker.addTab = { [weak picker, weak model] title, path in
                 guard let picker, let model else { return }

@@ -52,6 +52,7 @@ enum PickerSettingsSection: Hashable {
     @Published private(set) var activeSection = "Foundations"
     @Published var selected = 0
     @Published var hoveredTokenID: String? = nil
+    @Published var openError: String? = nil
     @Published var showingSettings = false
     @Published var settingsSection: PickerSettingsSection = .general
     @Published var preferredEditor = PreferredEditor.vscode.rawValue
@@ -73,8 +74,14 @@ enum PickerSettingsSection: Hashable {
         if showingSettings {
             settingsSection = .general
             hoveredTokenID = nil
+            openError = nil
             beginSettings?()
         } else { endSettings?() }
+    }
+    func backFromSettings() {
+        guard showingSettings else { return }
+        showingSettings = false
+        settingsSection = .general
     }
     func setPreferredEditor(_ editor: String) {
         guard PreferredEditor(rawValue: editor) != nil else { return }
@@ -311,6 +318,12 @@ struct PickerView: View {
                 .overlay { if allowsDragging { PickerDragHeader(state: state) } }
             ScrollViewReader { proxy in
                 ScrollView {
+                    if let openError = state.openError, !state.showingSettings {
+                        Text(openError).font(Protegia.font(11)).foregroundStyle(Protegia.destructive)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10).background(Protegia.destructive.opacity(0.1), in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
+                            .padding(.horizontal, 14).padding(.bottom, 8)
+                    }
                     if state.showingSettings {
                         settingsContent
                     } else if state.creatingTab && state.activeSection == "New tab" {
@@ -443,6 +456,11 @@ struct PickerView: View {
 
     private var settingsContent: some View {
         VStack(alignment: .leading, spacing: 14) {
+            Button { state.backFromSettings() } label: {
+                Label("Back", systemImage: "chevron.left")
+                    .font(Protegia.font(12, bold: true))
+            }.buttonStyle(.plain).foregroundStyle(Protegia.secondary)
+                .accessibilityLabel("Back to definitions")
             if state.settingsSection == .general {
                 HStack(spacing: 10) {
                     Text("Preferred editor")
@@ -453,15 +471,18 @@ struct PickerView: View {
                     } label: { settingsChoice(state.preferredEditor) }
                 }
                 HStack(spacing: 10) {
-                    Text("Local checkout")
+                    Text("Project folder")
                     Button { state.chooseCheckout?() } label: {
                         settingsChoice(state.checkoutPath.isEmpty ? "Choose folder" : URL(fileURLWithPath: state.checkoutPath).lastPathComponent)
                     }
                     .buttonStyle(.plain)
                     .help(state.checkoutPath.isEmpty ? "Choose the local folder for this GitHub project" : state.checkoutPath)
                 }
+                Text("The local copy of this GitHub project. The file icon uses it to find a token’s source file and definition line.")
+                    .font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if state.preferredEditor == PreferredEditor.codex.rawValue || state.preferredEditor == PreferredEditor.claude.rawValue {
-                    Text("Opens a code session with the file and line prefilled.")
+                    Text("Codex and Claude open a code session with the file and line prefilled. VS Code and Cursor jump to the line.")
                         .font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
                 }
             } else {
@@ -799,11 +820,15 @@ struct PickerDismissalGate {
         state.choose = { [weak self] in self?.insert($0) }
         state.openDefinition = { [weak self] token in
             guard let self else { return }
-            self.model.openDefinition(token, editor: self.state.preferredEditor)
+            if let checkout = self.model.openDefinition(token, editor: self.state.preferredEditor) {
+                self.state.setCheckoutPath(checkout)
+                self.state.openError = nil
+            } else { self.state.openError = self.model.error }
         }
         state.chooseCheckout = { [weak self] in
             guard let self, let path = self.model.chooseLocalCheckout() else { return }
             self.state.setCheckoutPath(path)
+            self.state.openError = nil
         }
         state.beginSettings = { [weak self] in
             guard let self else { return }
