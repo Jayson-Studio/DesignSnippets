@@ -32,6 +32,12 @@ enum PickerSortOrder: String, CaseIterable {
     case name = "Name"
     case fontSize = "Font size"
 }
+enum PreferredEditor: String, CaseIterable {
+    case codex = "Codex"
+    case claude = "Claude"
+    case vscode = "VS Code"
+    case cursor = "Cursor"
+}
 enum PickerSettingsSection: Hashable {
     case general
     case tokens(String)
@@ -48,9 +54,11 @@ enum PickerSettingsSection: Hashable {
     @Published var hoveredTokenID: String? = nil
     @Published var showingSettings = false
     @Published var settingsSection: PickerSettingsSection = .general
-    @Published var preferredEditor = "GitHub.dev"
+    @Published var preferredEditor = PreferredEditor.vscode.rawValue
+    @Published var checkoutPath = ""
     @Published var sortOrders: [String: PickerSortOrder] = [:]
     var openDefinition: ((DesignToken) -> Void)?
+    var chooseCheckout: (() -> Void)?
     var beginSettings: (() -> Void)?
     var endSettings: (() -> Void)?
     private let defaults: UserDefaults
@@ -58,7 +66,7 @@ enum PickerSettingsSection: Hashable {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         if let savedEditor = defaults.string(forKey: "pickerPreferredEditor"),
-           ["GitHub.dev", "GitHub"].contains(savedEditor) { preferredEditor = savedEditor }
+           PreferredEditor(rawValue: savedEditor) != nil { preferredEditor = savedEditor }
     }
     func toggleSettings() {
         showingSettings.toggle()
@@ -69,9 +77,14 @@ enum PickerSettingsSection: Hashable {
         } else { endSettings?() }
     }
     func setPreferredEditor(_ editor: String) {
-        guard ["GitHub.dev", "GitHub"].contains(editor) else { return }
+        guard PreferredEditor(rawValue: editor) != nil else { return }
         preferredEditor = editor
         defaults.set(editor, forKey: "pickerPreferredEditor")
+    }
+    func setCheckoutPath(_ path: String) {
+        guard let repositoryID else { return }
+        checkoutPath = path
+        defaults.set(path, forKey: "pickerCheckout:\(repositoryID)")
     }
     func sortOrder(for section: String) -> PickerSortOrder { sortOrders[section] ?? .name }
     func setSortOrder(_ order: PickerSortOrder, for section: String) {
@@ -178,6 +191,7 @@ enum PickerSettingsSection: Hashable {
         tabDefinitions = index?.pickerTabs ?? []
         if case .tokens(let title) = settingsSection, !sections.contains(title) { settingsSection = .general }
         repositoryID = index?.repository.id
+        checkoutPath = repositoryID.flatMap { defaults.string(forKey: "pickerCheckout:\($0)") } ?? ""
         sortOrders = Dictionary(uniqueKeysWithValues: sections.compactMap { section in
             guard let repositoryID else { return nil }
             let key = section == "Foundations" ? "foundations" : tabDefinitions.first(where: { $0.title == section })?.path ?? section
@@ -428,26 +442,42 @@ struct PickerView: View {
     }
 
     private var settingsContent: some View {
-        HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             if state.settingsSection == .general {
-                Text("Preferred editor")
-                Menu {
-                    Button("GitHub.dev") { state.setPreferredEditor("GitHub.dev") }
-                    Button("GitHub") { state.setPreferredEditor("GitHub") }
-                } label: { settingsChoice(state.preferredEditor) }
-            } else {
-                Text("Sort By")
-                Menu {
-                    ForEach(PickerSortOrder.allCases, id: \.self) { order in
-                        Button(order.rawValue) {
-                            if case .tokens(let title) = state.settingsSection { state.setSortOrder(order, for: title) }
+                HStack(spacing: 10) {
+                    Text("Preferred editor")
+                    Menu {
+                        ForEach(PreferredEditor.allCases, id: \.self) { editor in
+                            Button(editor.rawValue) { state.setPreferredEditor(editor.rawValue) }
                         }
+                    } label: { settingsChoice(state.preferredEditor) }
+                }
+                HStack(spacing: 10) {
+                    Text("Local checkout")
+                    Button { state.chooseCheckout?() } label: {
+                        settingsChoice(state.checkoutPath.isEmpty ? "Choose folder" : URL(fileURLWithPath: state.checkoutPath).lastPathComponent)
                     }
-                } label: {
-                    if case .tokens(let title) = state.settingsSection { settingsChoice(state.sortOrder(for: title).rawValue) }
+                    .buttonStyle(.plain)
+                    .help(state.checkoutPath.isEmpty ? "Choose the local folder for this GitHub project" : state.checkoutPath)
+                }
+                if state.preferredEditor == PreferredEditor.codex.rawValue || state.preferredEditor == PreferredEditor.claude.rawValue {
+                    Text("Opens a code session with the file and line prefilled.")
+                        .font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
+                }
+            } else {
+                HStack(spacing: 10) {
+                    Text("Sort By")
+                    Menu {
+                        ForEach(PickerSortOrder.allCases, id: \.self) { order in
+                            Button(order.rawValue) {
+                                if case .tokens(let title) = state.settingsSection { state.setSortOrder(order, for: title) }
+                            }
+                        }
+                    } label: {
+                        if case .tokens(let title) = state.settingsSection { settingsChoice(state.sortOrder(for: title).rawValue) }
+                    }
                 }
             }
-            Spacer(minLength: 0)
         }
         .font(Protegia.font(12)).padding(.horizontal, 24).padding(.top, 18)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -770,6 +800,10 @@ struct PickerDismissalGate {
         state.openDefinition = { [weak self] token in
             guard let self else { return }
             self.model.openDefinition(token, editor: self.state.preferredEditor)
+        }
+        state.chooseCheckout = { [weak self] in
+            guard let self, let path = self.model.chooseLocalCheckout() else { return }
+            self.state.setCheckoutPath(path)
         }
         state.beginSettings = { [weak self] in
             guard let self else { return }

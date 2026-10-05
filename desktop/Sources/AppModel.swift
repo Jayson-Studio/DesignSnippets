@@ -1,6 +1,46 @@
 import AppKit
 import SwiftUI
 
+enum LocalDefinition {
+    static func applicationURL(bundleID: String, appName: String) -> URL? {
+        if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) { return app }
+        let roots = [URL(fileURLWithPath: "/Applications", isDirectory: true),
+                     FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true)]
+        for root in roots {
+            let app = root.appendingPathComponent("\(appName).app", isDirectory: true)
+            let info = app.appendingPathComponent("Contents/Info.plist")
+            if let data = try? Data(contentsOf: info),
+               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+               plist["CFBundleIdentifier"] as? String == bundleID { return app }
+        }
+        return nil
+    }
+    static func fileURL(checkout: String, source: String) -> URL? {
+        guard let path = try? GitHubClient.filePaths([source]).first else { return nil }
+        let root = URL(fileURLWithPath: checkout, isDirectory: true).resolvingSymlinksInPath().standardizedFileURL
+        let file = root.appendingPathComponent(path).resolvingSymlinksInPath().standardizedFileURL
+        guard file.path.hasPrefix(root.path + "/"), FileManager.default.fileExists(atPath: file.path) else { return nil }
+        return file
+    }
+    static func line(_ token: DesignToken, at file: URL) -> Int? {
+        guard let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
+        return GitHubClient.definitionLine(token, in: text)
+    }
+    static func goToArgument(file: URL, line: Int) -> String { "\(file.path):\(line)" }
+    static func codeSessionURL(editor: PreferredEditor, file: URL, line: Int, checkout: String) -> URL? {
+        guard editor == .codex || editor == .claude else { return nil }
+        let prompt = "Open \(file.path) at line \(line) (\(file.lastPathComponent)) and show the definition. Do not edit the file."
+        var link = URLComponents()
+        link.scheme = editor == .codex ? "codex" : "claude"
+        link.host = editor == .codex ? "threads" : "code"
+        link.path = "/new"
+        link.queryItems = editor == .codex
+            ? [URLQueryItem(name: "path", value: checkout), URLQueryItem(name: "prompt", value: prompt)]
+            : [URLQueryItem(name: "folder", value: checkout), URLQueryItem(name: "q", value: prompt)]
+        return link.url
+    }
+}
+
 @MainActor final class AppModel: ObservableObject {
     @Published var clientID = ""
     @Published var appSlug = ""
@@ -49,20 +89,84 @@ import SwiftUI
         return displayed
     }
     var resolutionTokens: [DesignToken] { tokens + (activeIndex?.referenceTokens ?? []) }
-    func openDefinition(_ definition: DesignToken, editor: String = "GitHub.dev") {
+    func chooseLocalCheckout() -> String? {
+        guard let repository = activeIndex?.repository, repository.id != 0 else {
+            error = "Connect a GitHub project before choosing a local checkout."
+            return nil
+        }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose the local checkout of \(repository.full_name)."
+        panel.prompt = "Use folder"
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        return url.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+    func openDefinition(_ definition: DesignToken, editor: String = PreferredEditor.vscode.rawValue) {
         guard let repository = activeIndex?.repository, repository.id != 0 else {
             error = "Connect a GitHub project to open token definitions."
             return
         }
-        Task {
-            let source = try? await GitHubClient(token: token).fileText(repository, path: definition.source)
-            let line = source.flatMap { GitHubClient.definitionLine(definition, in: $0) }
-            guard let url = GitHubClient.definitionURL(repository, path: definition.source, line: line, editor: editor) else {
-                error = "Could not form an editor link for \(definition.source)."
-                return
-            }
-            if !NSWorkspace.shared.open(url) { error = "Could not open the code editor." }
+        guard let chosen = PreferredEditor(rawValue: editor) else { return }
+        guard let checkout = UserDefaults.standard.string(forKey: "pickerCheckout:\(repository.id)"), !checkout.isEmpty else {
+            error = "Choose a local checkout in General settings to open definitions in \(chosen.rawValue)."
+            return
         }
+        guard let file = LocalDefinition.fileURL(checkout: checkout, source: definition.source) else {
+            error = "\(definition.source) was not found in the selected local checkout. Choose the matching folder in General settings."
+            return
+        }
+        guard let line = LocalDefinition.line(definition, at: file) else {
+            error = "Could not locate \(definition.name) in the local file. Refresh the project or choose the matching checkout."
+            return
+        }
+        do {
+            try launchEditor(chosen, file: file, line: line, checkout: checkout)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+    private func launchEditor(_ editor: PreferredEditor, file: URL, line: Int, checkout: String) throws {
+        if editor == .codex || editor == .claude {
+            let bundleID = editor == .codex ? "com.openai.codex" : "com.anthropic.claudefordesktop"
+            let appName = editor == .codex ? "ChatGPT" : "Claude"
+            guard LocalDefinition.applicationURL(bundleID: bundleID, appName: appName) != nil else {
+                throw SemanticError("Install \(editor.rawValue) to open this definition.")
+            }
+            guard let url = LocalDefinition.codeSessionURL(editor: editor, file: file, line: line, checkout: checkout),
+                  NSWorkspace.shared.open(url) else {
+                throw SemanticError("Could not open \(editor.rawValue).")
+            }
+            return
+        }
+        let bundleID: String
+        let appName: String
+        let command: String
+        switch editor {
+        case .vscode:
+            bundleID = "com.microsoft.VSCode"
+            appName = "Visual Studio Code"
+            command = "code"
+        case .cursor:
+            bundleID = "com.todesktop.230313mzl4w4u92"
+            appName = "Cursor"
+            command = "cursor"
+        case .codex, .claude:
+            return
+        }
+        guard let app = LocalDefinition.applicationURL(bundleID: bundleID, appName: appName) else {
+            throw SemanticError("Install \(editor.rawValue) to open this definition.")
+        }
+        let executable = app.appendingPathComponent("Contents/Resources/app/bin/\(command)")
+        guard FileManager.default.isExecutableFile(atPath: executable.path) else {
+            throw SemanticError("Could not find the \(editor.rawValue) command in the installed app.")
+        }
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = ["--goto", LocalDefinition.goToArgument(file: file, line: line)]
+        process.currentDirectoryURL = URL(fileURLWithPath: checkout, isDirectory: true)
+        try process.run()
     }
     var needsColorRefresh: Bool {
         guard let index = activeIndex, index.repository.id != 0, index.colorReferencesScanned != true else { return false }
