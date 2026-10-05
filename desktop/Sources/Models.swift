@@ -111,10 +111,10 @@ enum TokenParser {
         // used. Keep only properties that agree across usages; never guess a
         // single weight/family when the same size is used by different styles.
         var styles: [String: [[String: String]]] = [:]
-        let keys = ["font-family": "fontFamily", "font-size": "fontSize", "font-weight": "fontWeight", "letter-spacing": "letterSpacing", "line-height": "lineHeight"]
+        let keys = ["font-family": "fontFamily", "font-size": "fontSize", "font-weight": "fontWeight", "letter-spacing": "letterSpacing", "line-height": "lineHeight", "color": "color"]
         for block in matches(#"([^{}]+)\{([^{}]*)\}"#, text) {
             var properties: [String: String] = [:]
-            for declaration in matches(#"(?:^|;)\s*(font-family|font-size|font-weight|letter-spacing|line-height)\s*:\s*([^;{}]+)"#, block[2]) {
+            for declaration in matches(#"(?:^|;)\s*(font-family|font-size|font-weight|letter-spacing|line-height|color)\s*:\s*([^;{}]+)"#, block[2]) {
                 properties[keys[declaration[1]]!] = declaration[2].trimmingCharacters(in: .whitespacesAndNewlines)
             }
             guard let size = properties["fontSize"], let name = matches(#"^var\((--[\w-]+)\)$"#, size).first?[1] else { continue }

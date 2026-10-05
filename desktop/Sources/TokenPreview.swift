@@ -2,6 +2,14 @@ import AppKit
 import SwiftUI
 
 enum TokenPreview {
+    static func isTextStyle(_ token: DesignToken) -> Bool {
+        token.kind.lowercased() != "color" && (token.kind.lowercased() == "typography" || token.typography != nil || token.name.contains("font") || token.name.contains("text"))
+    }
+    static func typographyColor(_ token: DesignToken, tokens: [DesignToken]) -> NSColor? {
+        guard let properties = typography(token, tokens: tokens),
+              let value = property(properties["color"] ?? properties["textColor"] ?? properties["foregroundColor"]) else { return nil }
+        return color(value)
+    }
     static func fontWeight(_ value: String) -> Font.Weight {
         switch value.lowercased().replacingOccurrences(of: "-", with: "").replacingOccurrences(of: " ", with: "") {
         case "100", "thin": return .ultraLight
@@ -104,7 +112,7 @@ enum TokenPreview {
     }
     static func color(_ raw: String) -> NSColor? {
         let value = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        let named: [String: String] = ["white":"#ffffff", "black":"#000000", "red":"#ff0000", "blue":"#0000ff", "green":"#008000", "transparent":"#00000000"]
+        let named: [String: String] = ["white":"#ffffff", "black":"#000000", "red":"#ff0000", "blue":"#0000ff", "green":"#008000", "gray":"#808080", "grey":"#808080", "yellow":"#ffff00", "orange":"#ffa500", "purple":"#800080", "rebeccapurple":"#663399", "transparent":"#00000000"]
         if let hex = named[value] { return color(hex) }
         if value.hasPrefix("#") {
             var hex = String(value.dropFirst())
@@ -116,6 +124,12 @@ enum TokenPreview {
         guard let open = value.firstIndex(of: "("), value.hasSuffix(")") else { return nil }
         let function = String(value[..<open])
         let parts = value[value.index(after: open)..<value.index(before: value.endIndex)].replacingOccurrences(of: ",", with: " ").replacingOccurrences(of: "/", with: " ").split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        if function == "color", parts.first == "display-p3", (parts.count == 4 || parts.count == 5) {
+            let values = parts.dropFirst().map { Double($0.replacingOccurrences(of: "%", with: "")) }
+            guard values.allSatisfy({ $0 != nil && $0!.isFinite }) else { return nil }
+            let components = zip(parts.dropFirst(), values).map { text, number in text.hasSuffix("%") ? number! / 100 : number! }
+            return NSColor(displayP3Red: components[0], green: components[1], blue: components[2], alpha: components.count == 4 ? components[3] : 1)
+        }
         guard parts.count == 3 || parts.count == 4 else { return nil }
         func number(_ text: String, percentScale: Double = 1) -> Double? {
             guard let n = Double(text.replacingOccurrences(of: "%", with: "").replacingOccurrences(of: "deg", with: "")), n.isFinite else { return nil }
@@ -170,7 +184,7 @@ struct TokenBadge: View {
         let kind = token.kind.lowercased()
         let properties = TokenPreview.typography(token, tokens: tokens)
         let radius = TokenPreview.radius(value)
-        let isText = kind != "color" && (kind == "typography" || token.name.contains("font") || token.name.contains("text"))
+        let isText = TokenPreview.isTextStyle(token)
         let color = TokenPreview.colorPresentation(token, tokens: tokens)
         ZStack(alignment: .topLeading) {
             if kind != "color" { Color.white.opacity(0.19) }
@@ -199,10 +213,13 @@ struct TokenBadge: View {
                 let fontSizeValue = TokenPreview.property(properties?["fontSize"]) ?? (token.name.contains("size") || token.name.hasPrefix("--text-") ? value : "16px")
                 let fontSize = max(1, TokenPreview.radius(fontSizeValue) ?? Double(fontSizeValue) ?? 16)
                 let fontWeight = TokenPreview.fontWeight(weight)
-                Text("Heading").font(cleanFamily.isEmpty ? .system(size: fontSize, weight: fontWeight) : .custom(cleanFamily, size: fontSize).weight(fontWeight))
-                    .fixedSize(horizontal: true, vertical: true).foregroundStyle(.white)
-                    .frame(width: size - 12, height: size - 12, alignment: .topLeading)
-                    .clipped().padding(6)
+                Text("Header").font(cleanFamily.isEmpty ? .system(size: fontSize, weight: fontWeight) : .custom(cleanFamily, size: fontSize).weight(fontWeight))
+                    .fixedSize(horizontal: true, vertical: true)
+                    .foregroundStyle(TokenPreview.typographyColor(token, tokens: tokens).map(Color.init(nsColor:)) ?? .white)
+                    .frame(width: size - 20, height: size, alignment: .leading)
+                    .padding(.leading, 10)
+                    .frame(width: size, height: size, alignment: .leading)
+                    .clipped()
             } else {
                 RoundedRectangle(cornerRadius: 5).fill(.white.opacity(0.14)).overlay(RoundedRectangle(cornerRadius: 5).stroke(.white.opacity(0.85),lineWidth: 1)).padding(size * 0.18)
             }

@@ -400,7 +400,7 @@ struct PickerView: View {
                     }.frame(maxWidth: .infinity).frame(height: 64)
                 } else {
                     HStack(spacing: 12) {
-                        TokenBadge(token: token, tokens: state.resolutionTokens, size: 36)
+                        TokenBadge(token: token, tokens: state.resolutionTokens, size: TokenPreview.isTextStyle(token) ? 100 : 36)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(token.name).font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(1)
                             Text(TokenPreview.pickerDefinition(token, tokens: state.resolutionTokens))
