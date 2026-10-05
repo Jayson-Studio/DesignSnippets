@@ -104,7 +104,8 @@ enum TokenPreview {
         if token.name.contains("weight") { return weightName(value) }
         if let match = TokenParser.matches(#"^var\((--[\w-]+)\)$|^\{([\w.-]+)\}$"#, token.value).first {
             let alias = (match[1].isEmpty ? match[2] : String(match[1].dropFirst(2))).replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: ".", with: " ").capitalized
-            return value == token.value ? token.value : "\(alias) · \(value)"
+            let isFontSize = token.name.contains("font-size") || token.name.hasPrefix("--text-") && !token.name.contains("--line-height")
+            return value == token.value ? token.value : "\(alias) · \(isFontSize ? fontSizeLabel(value) : value)"
         }
         if token.name.contains("font-size") || token.name.hasPrefix("--text-") && !token.name.contains("--line-height") {
             return fontSizeLabel(value)
