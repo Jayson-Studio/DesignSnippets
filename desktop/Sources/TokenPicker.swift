@@ -62,6 +62,7 @@ enum PickerSettingsSection: Hashable {
     var chooseCheckout: (() -> Void)?
     var beginSettings: (() -> Void)?
     var endSettings: (() -> Void)?
+    var returnFromSettings: (() -> Void)?
     private let defaults: UserDefaults
     private var repositoryID: Int?
     init(defaults: UserDefaults = .standard) {
@@ -82,6 +83,7 @@ enum PickerSettingsSection: Hashable {
         guard showingSettings else { return }
         showingSettings = false
         settingsSection = .general
+        returnFromSettings?()
     }
     func setPreferredEditor(_ editor: String) {
         guard PreferredEditor(rawValue: editor) != nil else { return }
@@ -193,6 +195,7 @@ enum PickerSettingsSection: Hashable {
     @Published var referenceTokens: [DesignToken] = []
     var resolutionTokens: [DesignToken] { tokens + referenceTokens }
     func updateIndex(_ index: TokenIndex?) {
+        if repositoryID != index?.repository.id { openError = nil }
         tokens = index?.displayTokens ?? []
         referenceTokens = index?.referenceTokens ?? []
         tabDefinitions = index?.pickerTabs ?? []
@@ -316,14 +319,14 @@ struct PickerView: View {
             // Retain a drag target without adding header copy or stealing tab clicks.
             Color.clear.frame(height: 12)
                 .overlay { if allowsDragging { PickerDragHeader(state: state) } }
+            if let openError = state.openError, !state.showingSettings {
+                Text(openError).font(Protegia.font(11)).foregroundStyle(Protegia.destructive)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10).background(Protegia.destructive.opacity(0.1), in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
+                    .padding(.horizontal, 14).padding(.bottom, 8)
+            }
             ScrollViewReader { proxy in
                 ScrollView {
-                    if let openError = state.openError, !state.showingSettings {
-                        Text(openError).font(Protegia.font(11)).foregroundStyle(Protegia.destructive)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10).background(Protegia.destructive.opacity(0.1), in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
-                            .padding(.horizontal, 14).padding(.bottom, 8)
-                    }
                     if state.showingSettings {
                         settingsContent
                     } else if state.creatingTab && state.activeSection == "New tab" {
@@ -810,6 +813,8 @@ struct PickerDismissalGate {
     private var lastClick: (pid: pid_t, point: CGPoint, date: Date)?
     private var injected = false
     private var notification: NSObjectProtocol?
+    private var canInsertBeforeSettings = false
+    private var returningToOwner = false
     private let positions = PickerPositionStore()
     private var ownerBundle = ""
     private var positionDisplay: String?
@@ -832,9 +837,21 @@ struct PickerDismissalGate {
         }
         state.beginSettings = { [weak self] in
             guard let self else { return }
+            self.canInsertBeforeSettings = self.state.canInsert
             self.state.canInsert = false
             self.panel?.acceptsInput = true
             self.panel?.makeKeyAndOrderFront(nil)
+        }
+        state.returnFromSettings = { [weak self] in
+            guard let self else { return }
+            self.state.canInsert = self.canInsertBeforeSettings
+            self.panel?.acceptsInput = false
+            guard let owner = NSRunningApplication(processIdentifier: self.pid) else { return }
+            self.returningToOwner = true
+            _ = owner.activate(options: [])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                self?.returningToOwner = false
+            }
         }
         state.endSettings = { [weak self] in
             guard let self else { return }
@@ -872,6 +889,10 @@ struct PickerDismissalGate {
                 guard let self else { return }
                 let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
                 let bundleID = app?.bundleIdentifier ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                if self.returningToOwner && app?.processIdentifier == self.pid {
+                    self.returningToOwner = false
+                    return
+                }
                 if !self.dismissalGate.appActivated(bundleID) {
                     self.pendingOutsideDismiss?.cancel()
                     self.pendingOutsideDismiss = nil
@@ -1305,6 +1326,8 @@ struct PickerDismissalGate {
         if state.creatingTab { state.cancelTab() }
         state.showingSettings = false
         state.hoveredTokenID = nil
+        state.openError = nil
+        returningToOwner = false
         pendingOutsideDismiss?.cancel(); pendingOutsideDismiss = nil
         dismissalGate.cancel()
         panel?.acceptsInput = false

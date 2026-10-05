@@ -119,7 +119,8 @@ enum LocalDefinition {
         let checkoutKey = "pickerCheckout:\(repository.id)"
         var checkout = UserDefaults.standard.string(forKey: checkoutKey) ?? ""
         var file = checkout.isEmpty ? nil : LocalDefinition.fileURL(checkout: checkout, source: definition.source)
-        if file == nil {
+        var line = file.flatMap { LocalDefinition.line(definition, at: $0) }
+        if file == nil || line == nil {
             guard let selected = chooseLocalCheckout(for: definition.source) else {
                 error = "Choose the local \(repository.full_name) folder to open \(definition.name) in \(chosen.rawValue)."
                 return nil
@@ -130,13 +131,14 @@ enum LocalDefinition {
                 error = "\(definition.source) was not found in that folder. Choose the project root containing this file."
                 return nil
             }
+            line = file.flatMap { LocalDefinition.line(definition, at: $0) }
+            guard line != nil else {
+                error = "Could not locate \(definition.name) in that folder. Choose a checkout containing the current definition."
+                return nil
+            }
             UserDefaults.standard.set(checkout, forKey: checkoutKey)
         }
-        guard let file else { return nil }
-        guard let line = LocalDefinition.line(definition, at: file) else {
-            error = "Could not locate \(definition.name) in the local file. Refresh the project or choose the matching checkout."
-            return nil
-        }
+        guard let file, let line else { return nil }
         do {
             try launchEditor(chosen, file: file, line: line, checkout: checkout)
             return checkout

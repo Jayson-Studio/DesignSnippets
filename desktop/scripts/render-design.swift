@@ -81,6 +81,9 @@ import CoreText
         picker.settingsSection = .tokens("Icons")
         try render(PickerView(state: picker), name: "token-picker-settings-icons")
         picker.toggleSettings()
+        picker.openError = "Could not locate this definition in the selected project folder."
+        try render(PickerView(state: picker), name: "token-picker-open-error")
+        picker.openError = nil
         picker.tabDefinitions = []
         picker.canInsert = false
         picker.approximatePosition = true

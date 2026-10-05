@@ -189,8 +189,11 @@ final class ColorCacheProtocol: URLProtocol {
         precondition(reopenedSettings.sortOrder(for: "Foundations") == .fontSize)
         precondition(reopenedSettings.sortOrder(for: "Components") == .fontSize)
         precondition(reopenedSettings.sortOrder(for: "General") == .fontSize)
+        var didReturnFromSettings = false
+        settings.returnFromSettings = { didReturnFromSettings = true }
         settings.backFromSettings()
         precondition(!settings.showingSettings)
+        precondition(didReturnFromSettings)
         precondition(settings.settingsSection == .general)
         precondition(settings.activeSection == "Foundations")
         settings.toggleSettings()
@@ -227,6 +230,7 @@ final class ColorCacheProtocol: URLProtocol {
         try! sourceText.write(to: localFile, atomically: true, encoding: .utf8)
         precondition(LocalDefinition.fileURL(checkout: checkout.path, source: sourceToken.source) == localFile)
         precondition(LocalDefinition.line(sourceToken, at: localFile) == 3)
+        precondition(LocalDefinition.line(DesignToken(name: "--missing", value: "1px", kind: "Dimension", source: sourceToken.source), at: localFile) == nil)
         precondition(LocalDefinition.goToArgument(file: localFile, line: 3) == "\(localFile.path):3")
         let codexLink = LocalDefinition.codeSessionURL(editor: .codex, file: localFile, line: 3, checkout: checkout.path)!
         precondition(codexLink.scheme == "codex" && codexLink.host == "threads" && codexLink.path == "/new")
