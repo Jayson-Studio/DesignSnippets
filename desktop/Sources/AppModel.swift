@@ -2,16 +2,21 @@ import AppKit
 import SwiftUI
 
 enum LocalDefinition {
-    static func applicationURL(bundleID: String, appName: String) -> URL? {
+    static func applicationURL(bundleID: String, appNames: [String]) -> URL? {
         if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) { return app }
         let roots = [URL(fileURLWithPath: "/Applications", isDirectory: true),
                      FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true)]
+        return fallbackApplicationURL(bundleID: bundleID, appNames: appNames, roots: roots)
+    }
+    static func fallbackApplicationURL(bundleID: String, appNames: [String], roots: [URL]) -> URL? {
         for root in roots {
-            let app = root.appendingPathComponent("\(appName).app", isDirectory: true)
-            let info = app.appendingPathComponent("Contents/Info.plist")
-            if let data = try? Data(contentsOf: info),
-               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-               plist["CFBundleIdentifier"] as? String == bundleID { return app }
+            for appName in appNames {
+                let app = root.appendingPathComponent("\(appName).app", isDirectory: true)
+                let info = app.appendingPathComponent("Contents/Info.plist")
+                if let data = try? Data(contentsOf: info),
+                   let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                   plist["CFBundleIdentifier"] as? String == bundleID { return app }
+            }
         }
         return nil
     }
@@ -130,8 +135,8 @@ enum LocalDefinition {
     private func launchEditor(_ editor: PreferredEditor, file: URL, line: Int, checkout: String) throws {
         if editor == .codex || editor == .claude {
             let bundleID = editor == .codex ? "com.openai.codex" : "com.anthropic.claudefordesktop"
-            let appName = editor == .codex ? "ChatGPT" : "Claude"
-            guard LocalDefinition.applicationURL(bundleID: bundleID, appName: appName) != nil else {
+            let appNames = editor == .codex ? ["Codex", "ChatGPT"] : ["Claude"]
+            guard LocalDefinition.applicationURL(bundleID: bundleID, appNames: appNames) != nil else {
                 throw SemanticError("Install \(editor.rawValue) to open this definition.")
             }
             guard let url = LocalDefinition.codeSessionURL(editor: editor, file: file, line: line, checkout: checkout),
@@ -155,7 +160,7 @@ enum LocalDefinition {
         case .codex, .claude:
             return
         }
-        guard let app = LocalDefinition.applicationURL(bundleID: bundleID, appName: appName) else {
+        guard let app = LocalDefinition.applicationURL(bundleID: bundleID, appNames: [appName]) else {
             throw SemanticError("Install \(editor.rawValue) to open this definition.")
         }
         let executable = app.appendingPathComponent("Contents/Resources/app/bin/\(command)")
@@ -166,6 +171,7 @@ enum LocalDefinition {
         process.executableURL = executable
         process.arguments = ["--goto", LocalDefinition.goToArgument(file: file, line: line)]
         process.currentDirectoryURL = URL(fileURLWithPath: checkout, isDirectory: true)
+        process.terminationHandler = { _ in }
         try process.run()
     }
     var needsColorRefresh: Bool {
