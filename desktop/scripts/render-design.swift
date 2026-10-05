@@ -71,6 +71,17 @@ import CoreText
         picker.tokens = [DesignToken(name: "--radius-cui-dot-cycle", value: "8px", kind: "Radius", source: "theme.css"), DesignToken(name: "--color-cui-primary", value: "var(--color-cui-red-10)", kind: "Color", source: "theme.css"), DesignToken(name: "--text-cui-primary", value: #"{"fontSize":"24px","fontWeight":600}"#, kind: "Typography", source: "theme.css")]
         picker.referenceTokens = [DesignToken(name: "--color-cui-red-10", value: "#ec5a72", kind: "Color", source: "scales.css")]
         try render(PickerView(state: picker), name: "token-picker")
+        picker.openDefinition = { _ in }
+        picker.hoveredTokenID = picker.tokens[2].id
+        try render(PickerView(state: picker), name: "token-picker-hover-action")
+        picker.hoveredTokenID = nil
+        picker.tabDefinitions = [PickerTab(title: "Components", path: "components.json"), PickerTab(title: "Icons", path: "icons.json")]
+        picker.toggleSettings()
+        try render(PickerView(state: picker), name: "token-picker-settings-general")
+        picker.settingsSection = "Icons"
+        try render(PickerView(state: picker), name: "token-picker-settings-icons")
+        picker.toggleSettings()
+        picker.tabDefinitions = []
         picker.canInsert = false
         picker.approximatePosition = true
         try render(PickerView(state: picker), name: "token-picker-fallback")

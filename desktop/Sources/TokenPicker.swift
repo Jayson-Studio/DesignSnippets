@@ -28,12 +28,52 @@ enum PickerLayout {
 }
 
 enum TabCreationStep: Equatable { case title, source }
+enum PickerSortOrder: String, CaseIterable {
+    case name = "Name"
+    case fontSize = "Font size"
+}
 
 @MainActor final class PickerState: ObservableObject {
     static let maxTabTitleLength = 25
     @Published var query = ""
     @Published private(set) var activeSection = "Foundations"
     @Published var selected = 0
+    @Published var hoveredTokenID: String? = nil
+    @Published var showingSettings = false
+    @Published var settingsSection = "General"
+    @Published var preferredEditor = "GitHub.dev"
+    @Published var sortOrders: [String: PickerSortOrder] = [:]
+    var openDefinition: ((DesignToken) -> Void)?
+    var beginSettings: (() -> Void)?
+    var endSettings: (() -> Void)?
+    private let defaults: UserDefaults
+    private var repositoryID: Int?
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        if let savedEditor = defaults.string(forKey: "pickerPreferredEditor"),
+           ["GitHub.dev", "GitHub"].contains(savedEditor) { preferredEditor = savedEditor }
+    }
+    func toggleSettings() {
+        showingSettings.toggle()
+        if showingSettings {
+            settingsSection = "General"
+            hoveredTokenID = nil
+            beginSettings?()
+        } else { endSettings?() }
+    }
+    func setPreferredEditor(_ editor: String) {
+        guard ["GitHub.dev", "GitHub"].contains(editor) else { return }
+        preferredEditor = editor
+        defaults.set(editor, forKey: "pickerPreferredEditor")
+    }
+    func sortOrder(for section: String) -> PickerSortOrder { sortOrders[section] ?? .name }
+    func setSortOrder(_ order: PickerSortOrder, for section: String) {
+        sortOrders[section] = order
+        selected = 0
+        guard let repositoryID else { return }
+        let key = section == "Foundations" ? "foundations" : tabDefinitions.first(where: { $0.title == section })?.path ?? section
+        defaults.set(order.rawValue, forKey: "pickerSort:\(repositoryID):\(key)")
+    }
     @Published var tabDefinitions: [PickerTab] = []
     @Published var creatingTab = false
     @Published var tabCreationStep: TabCreationStep = .title
@@ -129,6 +169,15 @@ enum TabCreationStep: Equatable { case title, source }
         tokens = index?.displayTokens ?? []
         referenceTokens = index?.referenceTokens ?? []
         tabDefinitions = index?.pickerTabs ?? []
+        if !(["General"] + sections).contains(settingsSection) { settingsSection = "General" }
+        repositoryID = index?.repository.id
+        sortOrders = Dictionary(uniqueKeysWithValues: sections.compactMap { section in
+            guard let repositoryID else { return nil }
+            let key = section == "Foundations" ? "foundations" : tabDefinitions.first(where: { $0.title == section })?.path ?? section
+            guard let raw = defaults.string(forKey: "pickerSort:\(repositoryID):\(key)"),
+                  let order = PickerSortOrder(rawValue: raw) else { return nil }
+            return (section, order)
+        })
         if creatingTab { selected = 0; return }
         if !sections.contains(activeSection) { selectSection("Foundations") }
         if matches.isEmpty,
@@ -189,7 +238,22 @@ enum TabCreationStep: Equatable { case title, source }
     }
     var matches: [DesignToken] {
         let candidates = tokensForSection(activeSection)
-        guard !query.isEmpty else { return candidates }
+        func sort(_ candidates: [DesignToken]) -> [DesignToken] {
+            guard sortOrder(for: activeSection) == .fontSize else { return candidates }
+            func size(_ token: DesignToken) -> Double? {
+                let value = TokenPreview.property(TokenPreview.typography(token, tokens: resolutionTokens)?["fontSize"])
+                    ?? TokenPreview.resolved(token, tokens: resolutionTokens)
+                return TokenPreview.radius(value)
+            }
+            return candidates.enumerated().sorted { left, right in
+                let a = size(left.element), b = size(right.element)
+                if let a, let b, a != b { return a < b }
+                if a != nil && b == nil { return true }
+                if a == nil && b != nil { return false }
+                return left.offset < right.offset
+            }.map(\.element)
+        }
+        guard !query.isEmpty else { return sort(candidates) }
         func normalized(_ name: String) -> String {
             var value = name.lowercased()
             if value.hasPrefix("--") { value.removeFirst(2) }
@@ -204,7 +268,7 @@ enum TabCreationStep: Equatable { case title, source }
             if name.hasPrefix(needle) { return isCompanion ? 2 : 1 }
             return isCompanion ? 4 : 3
         }
-        return candidates.enumerated().filter { $0.element.name.localizedCaseInsensitiveContains(query) }
+        return sort(candidates).enumerated().filter { $0.element.name.localizedCaseInsensitiveContains(query) }
             .sorted { left, right in
                 let a = rank(left.element), b = rank(right.element)
                 return a == b ? left.offset < right.offset : a < b
@@ -225,7 +289,9 @@ struct PickerView: View {
                 .overlay { if allowsDragging { PickerDragHeader(state: state) } }
             ScrollViewReader { proxy in
                 ScrollView {
-                    if state.creatingTab && state.activeSection == "New tab" {
+                    if state.showingSettings {
+                        settingsContent
+                    } else if state.creatingTab && state.activeSection == "New tab" {
                         ZStack {
                             if state.tabCreationStep == .title {
                                 tabTitleForm.transition(.asymmetric(
@@ -274,22 +340,35 @@ struct PickerView: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
-                        ForEach(state.sections, id: \.self) { section in
-                            Button { state.selectSection(section, pointer: NSEvent.mouseLocation) } label: {
-                                Text(state.displayTitle(for: section)).font(Protegia.font(12, bold: true)).fixedSize()
-                                    .padding(.horizontal, 12).padding(.vertical, 10)
-                                    .background(state.activeSection == section ? Protegia.level2 : .clear, in: Capsule())
-                            }.buttonStyle(.plain).id(section)
-                                .accessibilityAddTraits(state.activeSection == section ? .isSelected : [])
+                        if state.showingSettings {
+                            ForEach(["General"] + state.sections.filter { $0 != "New tab" }, id: \.self) { section in
+                                Button { state.settingsSection = section } label: {
+                                    Text(section).font(Protegia.font(12, bold: true)).fixedSize()
+                                        .padding(.horizontal, 12).padding(.vertical, 10)
+                                        .background(state.settingsSection == section ? Protegia.level2 : .clear, in: Capsule())
+                                }.buttonStyle(.plain).id(section)
+                                    .accessibilityAddTraits(state.settingsSection == section ? .isSelected : [])
+                            }
+                        } else {
+                            ForEach(state.sections, id: \.self) { section in
+                                Button { state.selectSection(section, pointer: NSEvent.mouseLocation) } label: {
+                                    Text(state.displayTitle(for: section)).font(Protegia.font(12, bold: true)).fixedSize()
+                                        .padding(.horizontal, 12).padding(.vertical, 10)
+                                        .background(state.activeSection == section ? Protegia.level2 : .clear, in: Capsule())
+                                }.buttonStyle(.plain).id(section)
+                                    .accessibilityAddTraits(state.activeSection == section ? .isSelected : [])
+                            }
+                            Button { state.createTab() } label: {
+                                Image(systemName: "plus").font(Protegia.font(12, bold: true))
+                                    .frame(width: 30, height: 30)
+                            }.buttonStyle(.plain).accessibilityLabel("Add tab")
+                                .disabled(state.creatingTab || state.tabBusy).id("add-tab")
                         }
-                        Button { state.createTab() } label: {
-                            Image(systemName: "plus").font(Protegia.font(12, bold: true))
-                                .frame(width: 30, height: 30)
-                        }.buttonStyle(.plain).accessibilityLabel("Add tab")
-                            .disabled(state.creatingTab || state.tabBusy).id("add-tab")
                     }.padding(.horizontal, 14).padding(.vertical, 10)
                 }.onChange(of: state.activeSection) { _, section in
-                    proxy.scrollTo(section == "New tab" ? "add-tab" : section, anchor: .trailing)
+                    if !state.showingSettings { proxy.scrollTo(section == "New tab" ? "add-tab" : section, anchor: .trailing) }
+                }.onChange(of: state.settingsSection) { _, section in
+                    if state.showingSettings { proxy.scrollTo(section, anchor: .trailing) }
                 }.onChange(of: state.tabTitle) { _, _ in
                     if state.creatingTab { proxy.scrollTo("add-tab", anchor: .trailing) }
                 }.onChange(of: state.tabDefinitions.count) { oldCount, newCount in
@@ -300,7 +379,7 @@ struct PickerView: View {
             ProtegiaDivider().padding(.horizontal, 14)
             HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(Protegia.tertiary)
-                    if editableSearch {
+                    if editableSearch && !state.showingSettings {
                         TextField("", text: $state.query,
                                   prompt: Text("Search for a token").foregroundColor(Protegia.tertiary))
                             .textFieldStyle(.plain).foregroundStyle(Protegia.text)
@@ -313,10 +392,14 @@ struct PickerView: View {
                             .foregroundStyle(state.query.isEmpty ? Protegia.tertiary : Protegia.text).lineLimit(1)
                     }
                     Spacer()
-                    Text("esc").font(Protegia.font(11)).foregroundStyle(Protegia.tertiary)
+                    if !state.showingSettings { Text("esc").font(Protegia.font(11)).foregroundStyle(Protegia.tertiary) }
+                    Button { state.toggleSettings() } label: {
+                        Image(systemName: "gearshape").font(.system(size: 15))
+                            .foregroundStyle(state.showingSettings ? Protegia.text : Protegia.secondary)
+                    }.buttonStyle(.plain).accessibilityLabel(state.showingSettings ? "Close section settings" : "Section settings")
+                        .disabled(state.creatingTab)
             }.padding(14).opacity(state.creatingTab ? 0.45 : 1)
                 .disabled(state.creatingTab)
-                .overlay { if allowsDragging { PickerDragHeader(state: state) } }
         }.frame(width: PickerLayout.width, height: PickerLayout.height).background(Protegia.base)
         .foregroundStyle(Protegia.text).font(Protegia.font(12)).tint(Protegia.accent).preferredColorScheme(.dark)
         .onChange(of: state.creatingTab) { _, creating in
@@ -333,6 +416,33 @@ struct PickerView: View {
                 else { tabPathFocused = true }
             }
         }
+    }
+
+    private var settingsContent: some View {
+        HStack(spacing: 10) {
+            if state.settingsSection == "General" {
+                Text("Preferred editor")
+                Menu {
+                    Button("GitHub.dev") { state.setPreferredEditor("GitHub.dev") }
+                    Button("GitHub") { state.setPreferredEditor("GitHub") }
+                } label: { settingsChoice(state.preferredEditor) }
+            } else {
+                Text("Sort By")
+                Menu {
+                    ForEach(PickerSortOrder.allCases, id: \.self) { order in
+                        Button(order.rawValue) { state.setSortOrder(order, for: state.settingsSection) }
+                    }
+                } label: { settingsChoice(state.sortOrder(for: state.settingsSection).rawValue) }
+            }
+            Spacer(minLength: 0)
+        }
+        .font(Protegia.font(12)).padding(.horizontal, 24).padding(.top, 18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func settingsChoice(_ title: String) -> some View {
+        Text(title).font(Protegia.font(12)).padding(.horizontal, 10).padding(.vertical, 8)
+            .background(Protegia.level2, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
     }
 
     private var tabTitleForm: some View {
@@ -411,7 +521,7 @@ struct PickerView: View {
                                 .font(Protegia.font(11)).foregroundStyle(Protegia.tertiary).lineLimit(2)
                         }
                         Spacer(minLength: 6)
-                        Text(index == state.selected ? "↵" : "").font(.system(size: 12, design: .monospaced))
+                        Text(index == state.selected && state.hoveredTokenID != token.id ? "↵" : "").font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(Protegia.secondary).frame(width: 15)
                     }.padding(10)
                 }
@@ -419,12 +529,53 @@ struct PickerView: View {
                 .background(index == state.selected ? Protegia.level2 : Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).id(token.id)
+            .overlay(alignment: .trailing) {
+                if !grid && state.hoveredTokenID == token.id && state.openDefinition != nil {
+                    Button { state.openDefinition?(token) } label: {
+                        FileInputIcon().stroke(Protegia.secondary, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                            .frame(width: 20, height: 20).frame(width: 34, height: 34)
+                    }.buttonStyle(.plain).padding(.trailing, 4)
+                        .accessibilityLabel("Open \(token.name) in code editor")
+                        .help("Open definition in \(state.preferredEditor)")
+                }
+            }
             .accessibilityLabel(token.name)
             .accessibilityAddTraits(index == state.selected ? .isSelected : [])
             .help("\(token.name): \(token.value)")
             .onContinuousHover { phase in
-                if case .active = phase { state.hoverSelection(index, at: NSEvent.mouseLocation) }
+                if case .active = phase {
+                    if state.hoveredTokenID != token.id { state.hoveredTokenID = token.id }
+                    state.hoverSelection(index, at: NSEvent.mouseLocation)
+                } else if state.hoveredTokenID == token.id { state.hoveredTokenID = nil }
             }
+    }
+}
+// Lucide file-input geometry, drawn as a native SwiftUI path.
+private struct FileInputIcon: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 4, y: 11))
+        path.addLine(to: CGPoint(x: 4, y: 4))
+        path.addQuadCurve(to: CGPoint(x: 6, y: 2), control: CGPoint(x: 4, y: 2))
+        path.addLine(to: CGPoint(x: 14, y: 2))
+        path.addQuadCurve(to: CGPoint(x: 15.706, y: 2.706), control: CGPoint(x: 15, y: 2))
+        path.addLine(to: CGPoint(x: 19.294, y: 6.294))
+        path.addQuadCurve(to: CGPoint(x: 20, y: 8), control: CGPoint(x: 20, y: 7))
+        path.addLine(to: CGPoint(x: 20, y: 20))
+        path.addQuadCurve(to: CGPoint(x: 18, y: 22), control: CGPoint(x: 20, y: 22))
+        path.addLine(to: CGPoint(x: 6, y: 22))
+        path.addQuadCurve(to: CGPoint(x: 4, y: 20), control: CGPoint(x: 4, y: 22))
+        path.move(to: CGPoint(x: 14, y: 2))
+        path.addLine(to: CGPoint(x: 14, y: 7))
+        path.addQuadCurve(to: CGPoint(x: 15, y: 8), control: CGPoint(x: 14, y: 8))
+        path.addLine(to: CGPoint(x: 20, y: 8))
+        path.move(to: CGPoint(x: 2, y: 15))
+        path.addLine(to: CGPoint(x: 12, y: 15))
+        path.move(to: CGPoint(x: 9, y: 12))
+        path.addLine(to: CGPoint(x: 12, y: 15))
+        path.addLine(to: CGPoint(x: 9, y: 18))
+        return path.applying(CGAffineTransform(translationX: rect.minX, y: rect.minY)
+            .scaledBy(x: rect.width / 24, y: rect.height / 24))
     }
 }
 // Move only our nonactivating panel; global coordinates avoid drag feedback.
@@ -590,6 +741,21 @@ struct PickerDismissalGate {
     init(model: AppModel) {
         self.model = model
         state.choose = { [weak self] in self?.insert($0) }
+        state.openDefinition = { [weak self] token in
+            guard let self else { return }
+            self.model.openDefinition(token, editor: self.state.preferredEditor)
+        }
+        state.beginSettings = { [weak self] in
+            guard let self else { return }
+            self.state.canInsert = false
+            self.panel?.acceptsInput = true
+            self.panel?.makeKeyAndOrderFront(nil)
+        }
+        state.endSettings = { [weak self] in
+            guard let self else { return }
+            self.dismiss()
+            _ = NSRunningApplication(processIdentifier: self.pid)?.activate(options: [])
+        }
         state.addTab = { [weak self] title, path in
             guard let self else { return }
             self.model.addPickerTab(title: title, path: path) { [weak self] result in
@@ -624,7 +790,7 @@ struct PickerDismissalGate {
                 if !self.dismissalGate.appActivated(bundleID) {
                     self.pendingOutsideDismiss?.cancel()
                     self.pendingOutsideDismiss = nil
-                } else if !self.state.creatingTab { self.dismiss() }
+                } else if !self.state.creatingTab && !self.state.showingSettings { self.dismiss() }
             }
         }
     }
@@ -739,7 +905,7 @@ struct PickerDismissalGate {
             }
             return false
         }
-        if state.creatingTab { return false }
+        if state.creatingTab || state.showingSettings { return false }
         guard type == .keyDown, let front = NSWorkspace.shared.frontmostApplication,
               let bundle = front.bundleIdentifier, model.allowsPicker(in: bundle), front.processIdentifier != ProcessInfo.processInfo.processIdentifier,
               !model.tokens.isEmpty else { dismiss(); return false }
@@ -1052,6 +1218,8 @@ struct PickerDismissalGate {
     }
     func dismiss() {
         if state.creatingTab { state.cancelTab() }
+        state.showingSettings = false
+        state.hoveredTokenID = nil
         pendingOutsideDismiss?.cancel(); pendingOutsideDismiss = nil
         dismissalGate.cancel()
         panel?.acceptsInput = false

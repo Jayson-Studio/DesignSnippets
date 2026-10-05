@@ -49,6 +49,25 @@ import SwiftUI
         return displayed
     }
     var resolutionTokens: [DesignToken] { tokens + (activeIndex?.referenceTokens ?? []) }
+    func openDefinition(_ definition: DesignToken, editor: String = "GitHub.dev") {
+        guard let repository = activeIndex?.repository, repository.id != 0 else {
+            error = "Connect a GitHub project to open token definitions."
+            return
+        }
+        Task {
+            let line: Int?
+            if let savedLine = definition.sourceLine { line = savedLine }
+            else {
+                let source = try? await GitHubClient(token: token).fileText(repository, path: definition.source)
+                line = source.flatMap { GitHubClient.definitionLine(definition, in: $0) }
+            }
+            guard let url = GitHubClient.definitionURL(repository, path: definition.source, line: line, editor: editor) else {
+                error = "Could not form an editor link for \(definition.source)."
+                return
+            }
+            if !NSWorkspace.shared.open(url) { error = "Could not open the code editor." }
+        }
+    }
     var needsColorRefresh: Bool {
         guard let index = activeIndex, index.repository.id != 0, index.colorReferencesScanned != true else { return false }
         return index.tokens.contains { $0.kind.lowercased() == "color" && $0.value.contains("var(") }

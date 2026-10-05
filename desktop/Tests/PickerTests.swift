@@ -157,6 +157,46 @@ final class ColorCacheProtocol: URLProtocol {
         precondition(ranked.matches.map(\.name) == ["--text-cui-base", "--text-cui-lg", "--text-cui-sm", "--text-cui-base--line-height", "--text-cui-lg--line-height"])
         ranked.query = ""
         precondition(ranked.matches == ranked.tokens)
+        let settingsSuite = "DesignSnippets.PickerSettings.\(UUID().uuidString)"
+        let settingsDefaults = UserDefaults(suiteName: settingsSuite)!
+        defer { settingsDefaults.removePersistentDomain(forName: settingsSuite) }
+        let settingsRepo = Repository(id: 902, full_name: "example/tokens", default_branch: "main", private: false)
+        let settingsIndex = TokenIndex(repository: settingsRepo, tokens: ranked.tokens, syncedAt: Date(), revision: "fixture",
+                                       pickerTabs: [PickerTab(title: "Components", path: "components.json")])
+        let settings = PickerState(defaults: settingsDefaults)
+        settings.updateIndex(settingsIndex)
+        precondition(settings.sections == ["Foundations", "Components"])
+        settings.toggleSettings()
+        precondition(settings.showingSettings && settings.settingsSection == "General")
+        settings.setSortOrder(.fontSize, for: "Foundations")
+        precondition(settings.matches.first?.name == "--text-cui-sm")
+        settings.setSortOrder(.fontSize, for: "Components")
+        settings.setPreferredEditor("GitHub")
+        let reopenedSettings = PickerState(defaults: settingsDefaults)
+        reopenedSettings.updateIndex(settingsIndex)
+        precondition(reopenedSettings.preferredEditor == "GitHub")
+        precondition(reopenedSettings.sortOrder(for: "Foundations") == .fontSize)
+        precondition(reopenedSettings.sortOrder(for: "Components") == .fontSize)
+        settings.toggleSettings()
+        precondition(!settings.showingSettings)
+        let sourceText = """
+        :root {
+          --text-cui-base: 1rem;
+          --text-cui-lg: 1.25rem;
+        }
+        """
+        let sourceToken = DesignToken(name: "--text-cui-lg", value: "1.25rem", kind: "Dimension", source: "src/theme.css")
+        precondition(GitHubClient.definitionLine(sourceToken, in: sourceText) == 3)
+        precondition(GitHubClient.definitionLine(sourceToken, in: "/* --text-cui-lg: old; */\n" + sourceText) == 4)
+        precondition(GitHubClient.definitionURL(settingsRepo, path: sourceToken.source, line: 3)?.absoluteString == "https://github.dev/example/tokens/blob/main/src/theme.css#L3")
+        precondition(GitHubClient.definitionURL(settingsRepo, path: sourceToken.source, line: 3, editor: "GitHub")?.absoluteString == "https://github.com/example/tokens/edit/main/src/theme.css")
+        let utilityAlias = DesignToken(name: "bg-cui-base", value: "var(--background-color-cui-base)", kind: "Color", source: "src/theme.css")
+        precondition(GitHubClient.definitionLine(utilityAlias, in: ":root { --background-color-cui-base: #fff; }") == 1)
+        let jsonToken = DesignToken(name: "colors.danger", value: "#ff0000", kind: "Color", source: "tokens.json")
+        precondition(GitHubClient.definitionLine(jsonToken, in: "{\n  \"colors\": {\n    \"danger\": {\"$value\": \"#ff0000\"}\n  }\n}") == 3)
+        let indexedAlias = TokenParser.withUtilityAliases([DesignToken(name: "--background-color-cui-base", value: "#fff", kind: "Color", source: "theme.css", sourceLine: 7)])
+        precondition(indexedAlias.first { $0.name == "bg-cui-base" }?.sourceLine == 7)
+        precondition(GitHubClient.definitionURL(settingsRepo, path: "../outside.css") == nil)
         // The default tab keeps existing imports; added tabs display only their chosen file.
         let tabs = PickerState()
         tabs.tokens = TokenParser.parse(#"{"foundations":{"color":{"$value":"red"}},"components":{"button":{"$value":"button"}},"icons":{"check":{"$value":"✓","$type":"icon"}},"getting-started":{"install":{"$value":"setup"}}}"#, source: "tokens.json")
