@@ -1,13 +1,46 @@
 import AppKit
 import SwiftUI
 
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+private final class MenuPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
+private struct MenuArrow: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { path in
+            path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.midX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.closeSubpath()
+        }
+    }
+}
+
+private struct MenuWindowContent: View {
+    let model: AppModel
+    let onDismiss: () -> Void
+    let onTabChange: (String) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            MenuArrow().fill(Protegia.base).frame(width: 20, height: 10)
+            SemanticPanel(model: model, onDismiss: onDismiss, onTabChange: onTabChange)
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Protegia.level2, lineWidth: 1))
+        }
+        .frame(width: 420)
+        .background(Color.clear)
+    }
+}
+
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private var popover: NSPopover!
+    private var menuPanel: MenuPanel!
     private var model: AppModel!
     private var picker: TokenPicker!
     private var updater: AppUpdater?
-    private var allowingPopoverClose = false
+    private var menuHeight: CGFloat = 620
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         installMainMenu()
@@ -24,16 +57,23 @@ import SwiftUI
             button.toolTip = "DesignSnippets — your design system, wherever you type"
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-        // Keep the menu visible while another app, including a screen capture tool, takes focus.
-        // The status item remains the explicit control for opening and closing it.
-        popover = NSPopover(); popover.behavior = .applicationDefined; popover.animates = false
-        popover.delegate = self
-        popover.contentSize = NSSize(width: 420, height: 620)
-        popover.contentViewController = NSHostingController(rootView: SemanticPanel(model: model, onDismiss: { [weak self] in
+        menuPanel = MenuPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: menuHeight + 10),
+                              styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        menuPanel.isOpaque = false
+        menuPanel.backgroundColor = .clear
+        menuPanel.hasShadow = true
+        menuPanel.level = .popUpMenu
+        menuPanel.isFloatingPanel = true
+        menuPanel.hidesOnDeactivate = false
+        menuPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        let host = NSHostingView(rootView: MenuWindowContent(model: model, onDismiss: { [weak self] in
             self?.closePanel()
         }) { [weak self] tab in
-            self?.popover.contentSize = NSSize(width: 420, height: tab == "Preview" ? 480 : 620)
+            self?.resizeMenu(for: tab)
         })
+        host.frame = NSRect(x: 0, y: 0, width: 420, height: menuHeight + 10)
+        host.autoresizingMask = [.width, .height]
+        menuPanel.contentView = host
         updater = AppUpdater(model: model) { [weak self] in self?.closePanel() }
         model.reconcilePicker()
         toggle()
@@ -77,33 +117,36 @@ import SwiftUI
             statusItem.menu = menu; statusItem.button?.performClick(nil); statusItem.menu = nil
             return
         }
-        if popover.isShown { closePanel() } else { showPanel() }
+        if menuPanel.isVisible { closePanel() } else { showPanel() }
     }
     private func closePanel() {
-        guard popover.isShown else { return }
-        allowingPopoverClose = true
-        popover.performClose(nil)
+        menuPanel.orderOut(nil)
     }
-    func popoverShouldClose(_ popover: NSPopover) -> Bool { allowingPopoverClose }
-    func popoverDidClose(_ notification: Notification) { allowingPopoverClose = false }
+    private func resizeMenu(for tab: String) {
+        menuHeight = tab == "Preview" ? 480 : 620
+        menuPanel.setContentSize(NSSize(width: 420, height: menuHeight + 10))
+        positionMenu()
+    }
     @objc private func showPanel() {
-        guard let button = statusItem.button else { return }
         picker.dismiss()
-        // The status-item button belongs to the menu bar on the display where its
-        // icon is visible. Keeping the popover attached to that button is more
-        // reliable than activating the accessory app, which can move focus to a
-        // different display and make AppKit reposition the popover.
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        // Popovers use a panel window, which otherwise hides when this accessory app
-        // loses focus to a capture tool even when the popover itself stays open.
-        popover.contentViewController?.view.window?.hidesOnDeactivate = false
+        positionMenu()
+        menuPanel.orderFrontRegardless()
+        menuPanel.makeKey()
+    }
+    private func positionMenu() {
+        guard let button = statusItem.button, let buttonWindow = button.window else { return }
+        let anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        let screen = buttonWindow.screen ?? NSScreen.screens.first(where: { $0.frame.contains(NSPoint(x: anchor.midX, y: anchor.midY)) }) ?? NSScreen.main
+        guard let screen else { return }
+        let visible = screen.visibleFrame
+        let size = menuPanel.frame.size
+        let x = min(max(anchor.midX - size.width / 2, visible.minX + 8), visible.maxX - size.width - 8)
+        let y = min(max(anchor.minY - size.height - 2, visible.minY + 8), visible.maxY - size.height)
+        menuPanel.setFrameOrigin(NSPoint(x: x, y: y))
     }
     @objc private func checkForUpdates() { model.checkForUpdates?() }
     @objc private func quit() { NSApp.terminate(nil) }
-    func applicationWillTerminate(_ notification: Notification) {
-        allowingPopoverClose = true
-        picker.stop()
-    }
+    func applicationWillTerminate(_ notification: Notification) { picker.stop() }
 }
 @main struct SemanticApp {
     @MainActor static func main() {

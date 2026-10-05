@@ -95,7 +95,7 @@ struct SemanticPanel: View {
                         Image(systemName: "folder").foregroundStyle(semanticGreen)
                         Menu { ForEach(model.indices, id: \.repository.id) { saved in Button(saved.repository.full_name) { model.select(saved.repository.id) } } } label: { Text(index.repository.full_name).font(Protegia.font(14, bold: true)) }.menuStyle(.borderlessButton)
                     }
-                    HStack { Text("\(index.tokens.count) definitions · \(index.repository.id == 0 ? "Sample tokens" : index.repository.default_branch)"); Spacer(); if index.repository.id != 0 { Button { model.refreshTokens(index.repository) } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).disabled(model.busy) } }.font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
+                    HStack { Text("\(index.displayTokens.count) definitions · \(index.repository.id == 0 ? "Sample tokens" : index.repository.default_branch)"); Spacer(); if index.repository.id != 0 { Button { model.refreshTokens(index.repository) } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).disabled(model.busy) } }.font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
                 }.padding(13).background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.cardRadius))
                 if model.needsColorRefresh {
                     VStack(alignment: .leading, spacing: 6) {
@@ -119,7 +119,7 @@ struct SemanticPanel: View {
                 if let feedback = model.pickerFeedback { Text(feedback).font(Protegia.font(12)).foregroundStyle(Protegia.secondary) }
                 if let notice = model.pickerNotice { Text(notice).font(Protegia.font(12)).foregroundStyle(Protegia.secondary) }
                 HStack { Image(systemName: "magnifyingglass").foregroundStyle(Protegia.secondary); TextField("Find a token…", text: $search).textFieldStyle(.plain) }.padding(9).background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
-                let filtered = index.tokens.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.source.localizedCaseInsensitiveContains(search) }
+                let filtered = index.displayTokens.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.source.localizedCaseInsensitiveContains(search) }
                 if filtered.isEmpty { Text("No matching definitions.").font(Protegia.font(12)).foregroundStyle(Protegia.secondary) }
                 LazyVStack(spacing: 0) { ForEach(filtered.prefix(60)) { token in
                     Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(token.name, forType: .string); model.status = "Copied \(token.name)" } label: {

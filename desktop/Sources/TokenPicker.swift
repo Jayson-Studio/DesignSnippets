@@ -126,7 +126,7 @@ enum TabCreationStep: Equatable { case title, source }
     @Published var referenceTokens: [DesignToken] = []
     var resolutionTokens: [DesignToken] { tokens + referenceTokens }
     func updateIndex(_ index: TokenIndex?) {
-        tokens = index?.tokens ?? []
+        tokens = index?.displayTokens ?? []
         referenceTokens = index?.referenceTokens ?? []
         tabDefinitions = index?.pickerTabs ?? []
         if creatingTab { selected = 0; return }
@@ -533,6 +533,12 @@ final class FloatingPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+enum PickerCapture {
+    static func isScreenshotApp(_ bundleID: String?) -> Bool {
+        bundleID?.hasPrefix("com.screenshot.iscreenshoter") == true
+    }
+}
+
 @MainActor final class TokenPicker {
     let model: AppModel
     let state = PickerState()
@@ -544,6 +550,7 @@ final class FloatingPanel: NSPanel {
     private var triggerHasHash = true
     private var initialRange: CFRange?
     private var placementTask: Task<Void, Never>?
+    private var pendingOutsideDismiss: DispatchWorkItem?
     private var beginTask: Task<Void, Never>?
     private var pendingTrigger = false
     private var copyOnlyFallback = false
@@ -588,8 +595,15 @@ final class FloatingPanel: NSPanel {
         state.dragHeader = { [weak self] point, began in self?.dragHeader(point, began: began) }
         state.endHeaderDrag = { [weak self] in self?.endHeaderDrag() }
         state.resetPosition = { [weak self] in self?.resetPosition() }
-        notification = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { if self?.state.creatingTab != true { self?.dismiss() } }
+        notification = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] notification in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                if PickerCapture.isScreenshotApp(app?.bundleIdentifier) {
+                    self.pendingOutsideDismiss?.cancel()
+                    self.pendingOutsideDismiss = nil
+                } else if !self.state.creatingTab { self.dismiss() }
+            }
         }
     }
     func start() {
@@ -686,14 +700,20 @@ final class FloatingPanel: NSPanel {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput { dismiss(); if let tap { CGEvent.tapEnable(tap: tap, enable: true) }; return false }
         if IsSecureEventInputEnabled() { dismiss(); return false }
         if event.getIntegerValueField(.eventSourceUserData) == eventMarker || injected { return false }
+        if PickerCapture.isScreenshotApp(NSWorkspace.shared.frontmostApplication?.bundleIdentifier) {
+            pendingOutsideDismiss?.cancel()
+            pendingOutsideDismiss = nil
+            return false
+        }
         if type == .leftMouseDown || type == .rightMouseDown {
             if type == .leftMouseDown, let app = NSWorkspace.shared.frontmostApplication,
                app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
                panel?.frame.contains(NSEvent.mouseLocation) != true {
                 lastClick = (app.processIdentifier, NSEvent.mouseLocation, Date())
             }
-            if pendingTrigger { dismiss() }
-            if let panel, panel.isVisible, !panel.frame.contains(NSEvent.mouseLocation) { dismiss() }
+            if pendingTrigger || (panel?.isVisible == true && panel?.frame.contains(NSEvent.mouseLocation) != true) {
+                scheduleOutsideDismiss()
+            }
             return false
         }
         if state.creatingTab { return false }
@@ -712,7 +732,7 @@ final class FloatingPanel: NSPanel {
         let isHashTrigger = text == "#" && flags.intersection([.maskCommand, .maskControl, .maskAlternate]).isEmpty
         if !flags.intersection([.maskCommand, .maskControl, .maskAlternate]).isEmpty ||
             (flags.contains(.maskShift) && !isHashTrigger && !PickerState.isQueryText(text)) {
-            dismiss(); return false
+            scheduleOutsideDismiss(); return false
         }
         // A fresh # starts a new query, even if an earlier picker is still open.
         if isHashTrigger { begin(front.processIdentifier, hasHash: true); return false }
@@ -761,6 +781,21 @@ final class FloatingPanel: NSPanel {
         }
         if text == "#" { begin(front.processIdentifier, hasHash: true) }
         return false
+    }
+    private func scheduleOutsideDismiss() {
+        guard pendingTrigger || target != nil || copyOnlyFallback || panel?.isVisible == true else { return }
+        pendingOutsideDismiss?.cancel()
+        let pending = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingOutsideDismiss = nil
+            if !PickerCapture.isScreenshotApp(NSWorkspace.shared.frontmostApplication?.bundleIdentifier) {
+                self.dismiss()
+            }
+        }
+        pendingOutsideDismiss = pending
+        // Let a capture shortcut or click activate its app before deciding whether
+        // the outside interaction should close the picker.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.75, execute: pending)
     }
     private func begin(_ pid: pid_t, hasHash: Bool) {
         dismiss()
@@ -993,6 +1028,7 @@ final class FloatingPanel: NSPanel {
     }
     func dismiss() {
         if state.creatingTab { state.cancelTab() }
+        pendingOutsideDismiss?.cancel(); pendingOutsideDismiss = nil
         panel?.acceptsInput = false
         beginTask?.cancel(); beginTask = nil; pendingTrigger = false
         copyOnlyFallback = false; fallbackAnchor = nil; trackedSessionValid = true

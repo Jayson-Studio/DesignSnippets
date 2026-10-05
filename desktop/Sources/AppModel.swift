@@ -38,7 +38,7 @@ import SwiftUI
     private var token: String?
     private let cacheURL: URL
     var activeIndex: TokenIndex? { indices.first { $0.repository.id == activeID } }
-    var tokens: [DesignToken] { activeIndex?.tokens ?? [] }
+    var tokens: [DesignToken] { activeIndex?.displayTokens ?? [] }
     var resolutionTokens: [DesignToken] { tokens + (activeIndex?.referenceTokens ?? []) }
     var needsColorRefresh: Bool {
         guard let index = activeIndex, index.repository.id != 0, index.colorReferencesScanned != true else { return false }
