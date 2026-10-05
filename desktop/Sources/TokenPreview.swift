@@ -3,7 +3,7 @@ import SwiftUI
 
 enum TokenPreview {
     static func isTextStyle(_ token: DesignToken) -> Bool {
-        token.kind.lowercased() != "color" && (token.kind.lowercased() == "typography" || token.name.contains("font") || token.name.contains("text"))
+        token.kind.lowercased() != "color" && (token.kind.lowercased() == "typography" || token.typography != nil || token.name.contains("font") || token.name.contains("text"))
     }
     static func typographyColor(_ token: DesignToken, tokens: [DesignToken]) -> NSColor? {
         guard let properties = typography(token, tokens: tokens),
@@ -112,7 +112,7 @@ enum TokenPreview {
     }
     static func color(_ raw: String) -> NSColor? {
         let value = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        let named: [String: String] = ["white":"#ffffff", "black":"#000000", "red":"#ff0000", "blue":"#0000ff", "green":"#008000", "transparent":"#00000000"]
+        let named: [String: String] = ["white":"#ffffff", "black":"#000000", "red":"#ff0000", "blue":"#0000ff", "green":"#008000", "gray":"#808080", "grey":"#808080", "yellow":"#ffff00", "orange":"#ffa500", "purple":"#800080", "rebeccapurple":"#663399", "transparent":"#00000000"]
         if let hex = named[value] { return color(hex) }
         if value.hasPrefix("#") {
             var hex = String(value.dropFirst())
@@ -124,6 +124,12 @@ enum TokenPreview {
         guard let open = value.firstIndex(of: "("), value.hasSuffix(")") else { return nil }
         let function = String(value[..<open])
         let parts = value[value.index(after: open)..<value.index(before: value.endIndex)].replacingOccurrences(of: ",", with: " ").replacingOccurrences(of: "/", with: " ").split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        if function == "color", parts.first == "display-p3", (parts.count == 4 || parts.count == 5) {
+            let values = parts.dropFirst().map { Double($0.replacingOccurrences(of: "%", with: "")) }
+            guard values.allSatisfy({ $0 != nil && $0!.isFinite }) else { return nil }
+            let components = zip(parts.dropFirst(), values).map { text, number in text.hasSuffix("%") ? number! / 100 : number! }
+            return NSColor(displayP3Red: components[0], green: components[1], blue: components[2], alpha: components.count == 4 ? components[3] : 1)
+        }
         guard parts.count == 3 || parts.count == 4 else { return nil }
         func number(_ text: String, percentScale: Double = 1) -> Double? {
             guard let n = Double(text.replacingOccurrences(of: "%", with: "").replacingOccurrences(of: "deg", with: "")), n.isFinite else { return nil }
