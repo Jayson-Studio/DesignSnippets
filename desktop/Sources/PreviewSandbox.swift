@@ -39,9 +39,11 @@ struct PreviewSandbox: View {
                 } else { picker.openError = model.error }
             }
             picker.chooseCheckout = { [weak picker, weak model] in
-                guard let picker, let path = model?.chooseLocalCheckout() else { return }
-                picker.setCheckoutPath(path)
-                picker.openError = nil
+                guard let picker, let model, let path = model.chooseLocalCheckout() else { return }
+                if model.configureLocalCheckout(path) {
+                    picker.setCheckoutPath(model.checkoutPath)
+                    picker.openError = nil
+                } else { picker.checkoutError = model.folderError }
             }
             picker.addTab = { [weak picker, weak model] title, path in
                 guard let picker, let model else { return }
@@ -59,6 +61,7 @@ struct PreviewSandbox: View {
             picker.updateIndex(indices.first(where: { $0.repository.id == model.activeID }))
         }
         .onChange(of: model.activeID) { _, _ in picker.updateIndex(model.activeIndex) }
+        .onChange(of: model.checkoutPath) { _, _ in picker.updateIndex(model.activeIndex) }
     }
 }
 
