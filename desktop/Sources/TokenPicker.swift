@@ -594,6 +594,7 @@ struct PickerView: View {
                                     in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel(token.name)
+                    .help("\(token.name): \(token.value)")
             } else {
                 HStack(spacing: 0) {
                     Button { state.choose?(token) } label: {
@@ -609,6 +610,7 @@ struct PickerView: View {
                     }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityLabel(token.name)
+                        .help("\(token.name): \(token.value)")
                     Button { state.openDefinition?(token) } label: {
                         FileInputIcon().stroke(Protegia.secondary,
                             style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
@@ -627,7 +629,6 @@ struct PickerView: View {
             }
         }.id(token.id)
             .accessibilityAddTraits(index == state.selected ? .isSelected : [])
-            .help("\(token.name): \(token.value)")
             .onContinuousHover { phase in
                 if case .active = phase {
                     if state.hoveredTokenID != token.id { state.hoveredTokenID = token.id }
