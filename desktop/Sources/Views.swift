@@ -227,6 +227,10 @@ struct SemanticPanel: View {
                 }
                 .disabled(model.activeIndex?.repository.id == nil || model.activeIndex?.repository.id == 0)
             }
+            if let folderError = model.folderError {
+                Text(folderError).font(Protegia.font(11)).foregroundStyle(Protegia.destructive)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text("Select the local copy of this project to enable the file icon in token results.")
                 .font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
             ProtegiaDivider()

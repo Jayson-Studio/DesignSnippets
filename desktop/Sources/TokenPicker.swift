@@ -59,6 +59,7 @@ enum PickerSettingsSection: Hashable {
     @Published var checkoutPath = ""
     @Published var checkoutError: String? = nil
     @Published private(set) var hasProjectFolder = false
+    private var sourceTokens: [DesignToken] = []
     @Published var sortOrders: [String: PickerSortOrder] = [:]
     var openDefinition: ((DesignToken) -> Void)?
     var chooseCheckout: (() -> Void)?
@@ -95,7 +96,7 @@ enum PickerSettingsSection: Hashable {
     func setCheckoutPath(_ path: String) {
         guard let repositoryID else { return }
         checkoutPath = path
-        hasProjectFolder = LocalDefinition.containsDefinition(checkout: path, tokens: tokens)
+        hasProjectFolder = LocalDefinition.containsDefinition(checkout: path, tokens: sourceTokens)
         checkoutError = nil
         defaults.set(path, forKey: "pickerCheckout:\(repositoryID)")
     }
@@ -199,14 +200,15 @@ enum PickerSettingsSection: Hashable {
     @Published var referenceTokens: [DesignToken] = []
     var resolutionTokens: [DesignToken] { tokens + referenceTokens }
     func updateIndex(_ index: TokenIndex?) {
-        if repositoryID != index?.repository.id { openError = nil }
+        if repositoryID != index?.repository.id { openError = nil; checkoutError = nil }
+        sourceTokens = index?.tokens ?? []
         tokens = index?.displayTokens ?? []
         referenceTokens = index?.referenceTokens ?? []
         tabDefinitions = index?.pickerTabs ?? []
         if case .tokens(let title) = settingsSection, !sections.contains(title) { settingsSection = .general }
         repositoryID = index?.repository.id
         checkoutPath = repositoryID.flatMap { defaults.string(forKey: "pickerCheckout:\($0)") } ?? ""
-        hasProjectFolder = LocalDefinition.containsDefinition(checkout: checkoutPath, tokens: tokens)
+        hasProjectFolder = LocalDefinition.containsDefinition(checkout: checkoutPath, tokens: sourceTokens)
         sortOrders = Dictionary(uniqueKeysWithValues: sections.compactMap { section in
             guard let repositoryID else { return nil }
             let key = section == "Foundations" ? "foundations" : tabDefinitions.first(where: { $0.title == section })?.path ?? section
@@ -857,7 +859,7 @@ struct PickerDismissalGate {
                 if self.model.configureLocalCheckout(path) {
                     self.state.setCheckoutPath(self.model.checkoutPath)
                     self.state.openError = nil
-                } else { self.state.checkoutError = self.model.error }
+                } else { self.state.checkoutError = self.model.folderError }
             }
             self.openingDefinition = false
         }

@@ -43,7 +43,7 @@ struct PreviewSandbox: View {
                 if model.configureLocalCheckout(path) {
                     picker.setCheckoutPath(model.checkoutPath)
                     picker.openError = nil
-                } else { picker.checkoutError = model.error }
+                } else { picker.checkoutError = model.folderError }
             }
             picker.addTab = { [weak picker, weak model] title, path in
                 guard let picker, let model else { return }

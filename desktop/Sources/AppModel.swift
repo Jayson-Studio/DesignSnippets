@@ -36,11 +36,24 @@ enum LocalDefinition {
         return !path.isEmpty && FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
     static func containsDefinition(checkout: String, tokens: [DesignToken]) -> Bool {
-        guard isDirectory(checkout) else { return false }
-        return tokens.contains { token in
-            guard let file = fileURL(checkout: checkout, source: token.source) else { return false }
-            return line(token, at: file) != nil
+        guard isDirectory(checkout), !tokens.isEmpty else { return false }
+        let bySource = Dictionary(grouping: tokens, by: \.source)
+        let requiredSources = min(2, bySource.count)
+        let requiredDefinitions = min(3, tokens.count)
+        var matchingSources = 0
+        var matchingDefinitions = 0
+        for source in bySource.keys.sorted() {
+            guard let file = fileURL(checkout: checkout, source: source),
+                  let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            let localNames = Set(TokenParser.parse(text, source: source).map(\.name))
+            let matches = bySource[source, default: []].filter { localNames.contains($0.name) }.count
+            if matches > 0 {
+                matchingSources += 1
+                matchingDefinitions += matches
+            }
+            if matchingSources >= requiredSources && matchingDefinitions >= requiredDefinitions { return true }
         }
+        return false
     }
     static func goToArgument(file: URL, line: Int) -> String { "\(file.path):\(line)" }
     static func codeSessionURL(editor: PreferredEditor, file: URL, line: Int, checkout: String) -> URL? {
@@ -69,9 +82,13 @@ enum LocalDefinition {
         didSet { displayedTokensByRepository.removeAll() }
     }
     @Published var activeID: Int? = nil {
-        didSet { checkoutPath = activeID.flatMap { defaults.string(forKey: "pickerCheckout:\($0)") } ?? "" }
+        didSet {
+            checkoutPath = activeID.flatMap { defaults.string(forKey: "pickerCheckout:\($0)") } ?? ""
+            folderError = nil
+        }
     }
     @Published private(set) var checkoutPath = ""
+    @Published private(set) var folderError: String? = nil
     @Published var deviceCode: DeviceCode? = nil
     @Published var updatesConfigured = false
     @Published var canCheckForUpdates = false
@@ -132,14 +149,14 @@ enum LocalDefinition {
         return url.resolvingSymlinksInPath().standardizedFileURL.path
     }
     @discardableResult func configureLocalCheckout(_ path: String) -> Bool {
-        error = nil
+        folderError = nil
         guard let index = activeIndex, index.repository.id != 0 else {
-            error = "Connect a GitHub project before choosing a local folder."
+            folderError = "Connect a GitHub project before choosing a local folder."
             return false
         }
         let folder = URL(fileURLWithPath: path, isDirectory: true).resolvingSymlinksInPath().standardizedFileURL.path
         guard LocalDefinition.containsDefinition(checkout: folder, tokens: index.tokens) else {
-            error = "Choose the \(index.repository.full_name) project root containing its token files."
+            folderError = "Choose the \(index.repository.full_name) project root containing its token files."
             return false
         }
         defaults.set(folder, forKey: "pickerCheckout:\(index.repository.id)")
