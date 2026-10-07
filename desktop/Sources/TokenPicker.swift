@@ -57,6 +57,8 @@ enum PickerSettingsSection: Hashable {
     @Published var settingsSection: PickerSettingsSection = .general
     @Published var preferredEditor = PreferredEditor.vscode.rawValue
     @Published var checkoutPath = ""
+    @Published var checkoutError: String? = nil
+    @Published private(set) var hasProjectFolder = false
     @Published var sortOrders: [String: PickerSortOrder] = [:]
     var openDefinition: ((DesignToken) -> Void)?
     var chooseCheckout: (() -> Void)?
@@ -93,6 +95,8 @@ enum PickerSettingsSection: Hashable {
     func setCheckoutPath(_ path: String) {
         guard let repositoryID else { return }
         checkoutPath = path
+        hasProjectFolder = LocalDefinition.containsDefinition(checkout: path, tokens: tokens)
+        checkoutError = nil
         defaults.set(path, forKey: "pickerCheckout:\(repositoryID)")
     }
     func sortOrder(for section: String) -> PickerSortOrder { sortOrders[section] ?? .name }
@@ -202,6 +206,7 @@ enum PickerSettingsSection: Hashable {
         if case .tokens(let title) = settingsSection, !sections.contains(title) { settingsSection = .general }
         repositoryID = index?.repository.id
         checkoutPath = repositoryID.flatMap { defaults.string(forKey: "pickerCheckout:\($0)") } ?? ""
+        hasProjectFolder = LocalDefinition.containsDefinition(checkout: checkoutPath, tokens: tokens)
         sortOrders = Dictionary(uniqueKeysWithValues: sections.compactMap { section in
             guard let repositoryID else { return nil }
             let key = section == "Foundations" ? "foundations" : tabDefinitions.first(where: { $0.title == section })?.path ?? section
@@ -482,6 +487,10 @@ struct PickerView: View {
                     .buttonStyle(.plain)
                     .help(state.checkoutPath.isEmpty ? "Choose the local folder for this GitHub project" : state.checkoutPath)
                 }
+                if let checkoutError = state.checkoutError {
+                    Text(checkoutError).font(Protegia.font(10)).foregroundStyle(Protegia.destructive)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Text("The local copy of this GitHub project. The file icon uses it to find a token’s source file and definition line.")
                     .font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -603,11 +612,13 @@ struct PickerView: View {
                             style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                             .frame(width: 20, height: 20)
                             .frame(width: 34, height: 56)
-                            .opacity(state.hoveredTokenID == token.id ? 1 : 0)
+                            .opacity(state.hoveredTokenID == token.id ? (state.hasProjectFolder ? 1 : 0.45) : 0)
                             .contentShape(Rectangle())
                     }.buttonStyle(.plain).padding(.trailing, 4)
+                        .disabled(!state.hasProjectFolder)
                         .accessibilityLabel("Open \(token.name) in code editor")
-                        .help("Open definition in \(state.preferredEditor)")
+                        .accessibilityHint(state.hasProjectFolder ? "" : "Set up folder in settings")
+                        .help(state.hasProjectFolder ? "Open definition in \(state.preferredEditor)" : "Set up folder in settings")
                 }
                 .background(index == state.selected ? Protegia.level2 : Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
                 .contentShape(Rectangle())
@@ -837,9 +848,18 @@ struct PickerDismissalGate {
             self.openingDefinition = false
         }
         state.chooseCheckout = { [weak self] in
-            guard let self, let path = self.model.chooseLocalCheckout() else { return }
-            self.state.setCheckoutPath(path)
-            self.state.openError = nil
+            guard let self else { return }
+            self.openingDefinition = true
+            self.pendingOutsideDismiss?.cancel()
+            self.pendingOutsideDismiss = nil
+            self.dismissalGate.cancel()
+            if let path = self.model.chooseLocalCheckout() {
+                if self.model.configureLocalCheckout(path) {
+                    self.state.setCheckoutPath(self.model.checkoutPath)
+                    self.state.openError = nil
+                } else { self.state.checkoutError = self.model.error }
+            }
+            self.openingDefinition = false
         }
         state.beginSettings = { [weak self] in
             guard let self else { return }

@@ -241,21 +241,32 @@ final class ColorCacheProtocol: URLProtocol {
         let checkoutKey = "pickerCheckout:\(editorRepo.id)"
         UserDefaults.standard.removeObject(forKey: checkoutKey)
         defer { UserDefaults.standard.removeObject(forKey: checkoutKey) }
-        var selectedCheckout = stale.path
-        editorModel.chooseLocalCheckoutOverride = { _ in selectedCheckout }
+        let editorPicker = PickerState()
+        editorPicker.updateIndex(editorModel.activeIndex)
+        precondition(!editorPicker.hasProjectFolder)
+        var chooserOpened = false
+        editorModel.chooseLocalCheckoutOverride = { _ in chooserOpened = true; return checkout.path }
         var openedLine: Int?
         editorModel.openEditorOverride = { editor, file, line, root in
             precondition(editor == .cursor && file == localFile && root == checkout.path)
             openedLine = line
         }
         precondition(editorModel.openDefinition(sourceToken, editor: "Cursor") == nil)
-        precondition(UserDefaults.standard.string(forKey: checkoutKey) == nil && openedLine == nil)
-        selectedCheckout = checkout.path
+        precondition(!chooserOpened && UserDefaults.standard.string(forKey: checkoutKey) == nil && openedLine == nil)
+        precondition(!editorModel.configureLocalCheckout(stale.path))
+        precondition(editorModel.checkoutPath.isEmpty)
+        precondition(editorModel.configureLocalCheckout(checkout.path))
+        editorPicker.updateIndex(editorModel.activeIndex)
+        precondition(editorPicker.hasProjectFolder)
         precondition(editorModel.openDefinition(sourceToken, editor: "Cursor") == checkout.path)
         precondition(UserDefaults.standard.string(forKey: checkoutKey) == checkout.path && openedLine == 3)
         UserDefaults.standard.set(stale.path, forKey: checkoutKey)
-        precondition(editorModel.openDefinition(sourceToken, editor: "Cursor") == checkout.path)
-        precondition(UserDefaults.standard.string(forKey: checkoutKey) == checkout.path)
+        editorModel.select(editorRepo.id)
+        editorPicker.updateIndex(editorModel.activeIndex)
+        precondition(!editorPicker.hasProjectFolder)
+        precondition(editorModel.openDefinition(sourceToken, editor: "Cursor") == nil)
+        precondition(!chooserOpened && UserDefaults.standard.string(forKey: checkoutKey) == stale.path)
+        precondition(editorModel.configureLocalCheckout(checkout.path))
         precondition(LocalDefinition.goToArgument(file: localFile, line: 3) == "\(localFile.path):3")
         let codexLink = LocalDefinition.codeSessionURL(editor: .codex, file: localFile, line: 3, checkout: checkout.path)!
         precondition(codexLink.scheme == "codex" && codexLink.host == "threads" && codexLink.path == "/new")

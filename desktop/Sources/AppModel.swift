@@ -31,6 +31,17 @@ enum LocalDefinition {
         guard let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
         return GitHubClient.definitionLine(token, in: text)
     }
+    static func isDirectory(_ path: String) -> Bool {
+        var isDirectory = ObjCBool(false)
+        return !path.isEmpty && FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+    static func containsDefinition(checkout: String, tokens: [DesignToken]) -> Bool {
+        guard isDirectory(checkout) else { return false }
+        return tokens.contains { token in
+            guard let file = fileURL(checkout: checkout, source: token.source) else { return false }
+            return line(token, at: file) != nil
+        }
+    }
     static func goToArgument(file: URL, line: Int) -> String { "\(file.path):\(line)" }
     static func codeSessionURL(editor: PreferredEditor, file: URL, line: Int, checkout: String) -> URL? {
         guard editor == .codex || editor == .claude else { return nil }
@@ -57,7 +68,10 @@ enum LocalDefinition {
     @Published var indices: [TokenIndex] = [] {
         didSet { displayedTokensByRepository.removeAll() }
     }
-    @Published var activeID: Int? = nil
+    @Published var activeID: Int? = nil {
+        didSet { checkoutPath = activeID.flatMap { defaults.string(forKey: "pickerCheckout:\($0)") } ?? "" }
+    }
+    @Published private(set) var checkoutPath = ""
     @Published var deviceCode: DeviceCode? = nil
     @Published var updatesConfigured = false
     @Published var canCheckForUpdates = false
@@ -86,6 +100,7 @@ enum LocalDefinition {
     private var displayedTokensByRepository: [Int: [DesignToken]] = [:]
     var chooseLocalCheckoutOverride: ((String?) -> String?)?
     var openEditorOverride: ((PreferredEditor, URL, Int, String) throws -> Void)?
+    private let defaults: UserDefaults
     private let cacheURL: URL
     var activeIndex: TokenIndex? { indices.first { $0.repository.id == activeID } }
     var tokens: [DesignToken] {
@@ -116,6 +131,21 @@ enum LocalDefinition {
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return url.resolvingSymlinksInPath().standardizedFileURL.path
     }
+    @discardableResult func configureLocalCheckout(_ path: String) -> Bool {
+        error = nil
+        guard let index = activeIndex, index.repository.id != 0 else {
+            error = "Connect a GitHub project before choosing a local folder."
+            return false
+        }
+        let folder = URL(fileURLWithPath: path, isDirectory: true).resolvingSymlinksInPath().standardizedFileURL.path
+        guard LocalDefinition.containsDefinition(checkout: folder, tokens: index.tokens) else {
+            error = "Choose the \(index.repository.full_name) project root containing its token files."
+            return false
+        }
+        defaults.set(folder, forKey: "pickerCheckout:\(index.repository.id)")
+        checkoutPath = folder
+        return true
+    }
     @discardableResult func openDefinition(_ definition: DesignToken, editor: String = PreferredEditor.vscode.rawValue) -> String? {
         error = nil
         guard let repository = activeIndex?.repository, repository.id != 0 else {
@@ -123,29 +153,19 @@ enum LocalDefinition {
             return nil
         }
         guard let chosen = PreferredEditor(rawValue: editor) else { return nil }
-        let checkoutKey = "pickerCheckout:\(repository.id)"
-        var checkout = UserDefaults.standard.string(forKey: checkoutKey) ?? ""
-        var file = checkout.isEmpty ? nil : LocalDefinition.fileURL(checkout: checkout, source: definition.source)
-        var line = file.flatMap { LocalDefinition.line(definition, at: $0) }
-        if file == nil || line == nil {
-            guard let selected = chooseLocalCheckout(for: definition.source) else {
-                error = "Choose the local \(repository.full_name) folder to open \(definition.name) in \(chosen.rawValue)."
-                return nil
-            }
-            checkout = selected
-            file = LocalDefinition.fileURL(checkout: checkout, source: definition.source)
-            guard file != nil else {
-                error = "\(definition.source) was not found in that folder. Choose the project root containing this file."
-                return nil
-            }
-            line = file.flatMap { LocalDefinition.line(definition, at: $0) }
-            guard line != nil else {
-                error = "Could not locate \(definition.name) in that folder. Choose a checkout containing the current definition."
-                return nil
-            }
-            UserDefaults.standard.set(checkout, forKey: checkoutKey)
+        let checkout = checkoutPath
+        guard LocalDefinition.isDirectory(checkout) else {
+            error = "Set up folder in settings to open definitions in \(chosen.rawValue)."
+            return nil
         }
-        guard let file, let line else { return nil }
+        guard let file = LocalDefinition.fileURL(checkout: checkout, source: definition.source) else {
+            error = "\(definition.source) was not found in the configured project folder. Change it in settings."
+            return nil
+        }
+        guard let line = LocalDefinition.line(definition, at: file) else {
+            error = "Could not locate \(definition.name) in the configured project folder. Check that it contains the current definition."
+            return nil
+        }
         do {
             try launchEditor(chosen, file: file, line: line, checkout: checkout)
             return checkout
@@ -212,6 +232,7 @@ enum LocalDefinition {
     ]
     init(preview: Bool = false, info: [String: Any] = Bundle.main.infoDictionary ?? [:],
          defaults: UserDefaults = .standard, cacheURL: URL? = nil) {
+        self.defaults = defaults
         allowsDeveloperSetup = info["SemanticDeveloperSetupAllowed"] as? Bool ?? false
         clientID = (info["SemanticGitHubClientID"] as? String ?? (allowsDeveloperSetup ? defaults.string(forKey: "githubClientID") : nil) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         appSlug = (info["SemanticGitHubAppSlug"] as? String ?? (allowsDeveloperSetup ? defaults.string(forKey: "githubAppSlug") : nil) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

@@ -214,6 +214,22 @@ struct SemanticPanel: View {
     private var preferences: some View {
         VStack(alignment: .leading, spacing: Protegia.spaceBase) {
             Text("Make it part of your flow.").font(Protegia.font(24, bold: true))
+            Text("Project folder").font(Protegia.font(12, bold: true))
+            Text(model.activeIndex?.repository.full_name ?? "Choose an active GitHub project first")
+                .font(Protegia.font(11)).foregroundStyle(Protegia.secondary)
+            HStack(spacing: 10) {
+                Text(model.checkoutPath.isEmpty ? "No folder selected" : model.checkoutPath)
+                    .font(Protegia.font(11)).foregroundStyle(Protegia.secondary).lineLimit(1)
+                    .help(model.checkoutPath)
+                Spacer()
+                Button(model.checkoutPath.isEmpty ? "Choose folder…" : "Change folder…") {
+                    if let path = model.chooseLocalCheckout() { model.configureLocalCheckout(path) }
+                }
+                .disabled(model.activeIndex?.repository.id == nil || model.activeIndex?.repository.id == 0)
+            }
+            Text("Select the local copy of this project to enable the file icon in token results.")
+                .font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
+            ProtegiaDivider()
             Toggle("Use in all compatible apps", isOn: $model.allApps).toggleStyle(.switch).font(Protegia.font(12))
             if !model.allApps {
             Text("USE ONLY IN THESE APPS").font(Protegia.font(10, bold: true)).tracking(1).foregroundStyle(Protegia.secondary)
