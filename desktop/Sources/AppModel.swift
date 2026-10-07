@@ -109,6 +109,10 @@ enum LocalDefinition {
         panel.message = source.map { "Choose the \(repository.full_name) folder containing \($0)." }
             ?? "Choose the local folder for \(repository.full_name)."
         panel.prompt = "Use folder"
+        // The picker is a nonactivating panel over another app. Activate our app so
+        // the first-use folder chooser is visible and receives keyboard input.
+        NSApp.activate(ignoringOtherApps: true)
+        panel.level = .popUpMenu
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return url.resolvingSymlinksInPath().standardizedFileURL.path
     }
