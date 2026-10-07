@@ -1007,6 +1007,9 @@ struct PickerDismissalGate {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput { dismiss(); if let tap { CGEvent.tapEnable(tap: tap, enable: true) }; return false }
         if IsSecureEventInputEnabled() { dismiss(); return false }
         if event.getIntegerValueField(.eventSourceUserData) == eventMarker || injected { return false }
+        // NSOpenPanel runs a nested event loop while opening a definition. Its
+        // clicks and typing belong to the chooser, not the original # session.
+        if openingDefinition { return false }
         if PickerCapture.isScreenshotApp(NSWorkspace.shared.frontmostApplication?.bundleIdentifier) {
             pendingOutsideDismiss?.cancel()
             pendingOutsideDismiss = nil
