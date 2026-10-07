@@ -598,24 +598,16 @@ struct PickerView: View {
                     }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityLabel(token.name)
-                    Button {
-                        if state.hoveredTokenID == token.id { state.openDefinition?(token) }
-                        else { state.choose?(token) }
-                    } label: {
-                        Group {
-                            if state.hoveredTokenID == token.id && state.openDefinition != nil {
-                                FileInputIcon().stroke(Protegia.secondary,
-                                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                                    .frame(width: 20, height: 20)
-                            } else {
-                                Text(index == state.selected ? "↵" : "")
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .foregroundStyle(Protegia.secondary)
-                            }
-                        }.frame(width: 34, height: 56)
+                    Button { state.openDefinition?(token) } label: {
+                        FileInputIcon().stroke(Protegia.secondary,
+                            style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                            .frame(width: 20, height: 20)
+                            .frame(width: 34, height: 56)
+                            .opacity(state.hoveredTokenID == token.id ? 1 : 0)
+                            .contentShape(Rectangle())
                     }.buttonStyle(.plain).padding(.trailing, 4)
-                        .accessibilityLabel(state.hoveredTokenID == token.id ? "Open \(token.name) in code editor" : token.name)
-                        .help(state.hoveredTokenID == token.id ? "Open definition in \(state.preferredEditor)" : "\(token.name): \(token.value)")
+                        .accessibilityLabel("Open \(token.name) in code editor")
+                        .help("Open definition in \(state.preferredEditor)")
                 }
                 .background(index == state.selected ? Protegia.level2 : Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
                 .contentShape(Rectangle())
@@ -816,6 +808,7 @@ struct PickerDismissalGate {
     private var notification: NSObjectProtocol?
     private var canInsertBeforeSettings = false
     private var returningToOwner = false
+    private var openingDefinition = false
     private var settingsReturnToken = UUID()
     private let positions = PickerPositionStore()
     private var ownerBundle = ""
@@ -827,10 +820,21 @@ struct PickerDismissalGate {
         state.choose = { [weak self] in self?.insert($0) }
         state.openDefinition = { [weak self] token in
             guard let self else { return }
+            self.openingDefinition = true
+            self.pendingOutsideDismiss?.cancel()
+            self.pendingOutsideDismiss = nil
+            self.dismissalGate.cancel()
             if let checkout = self.model.openDefinition(token, editor: self.state.preferredEditor) {
                 self.state.setCheckoutPath(checkout)
-                self.state.openError = nil
-            } else { self.state.openError = self.model.error }
+                self.dismiss()
+            } else {
+                self.state.openError = self.model.error
+                if let owner = NSRunningApplication(processIdentifier: self.pid) {
+                    self.returningToOwner = true
+                    _ = owner.activate(options: [])
+                }
+            }
+            self.openingDefinition = false
         }
         state.chooseCheckout = { [weak self] in
             guard let self, let path = self.model.chooseLocalCheckout() else { return }
@@ -897,6 +901,7 @@ struct PickerDismissalGate {
                 guard let self else { return }
                 let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
                 let bundleID = app?.bundleIdentifier ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                if self.openingDefinition { return }
                 if self.returningToOwner && app?.processIdentifier == self.pid {
                     self.returningToOwner = false
                     return
