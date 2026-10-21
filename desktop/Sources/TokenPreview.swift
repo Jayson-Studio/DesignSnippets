@@ -88,20 +88,48 @@ enum TokenPreview {
         if let dimension = value as? [String: Any], let number = dimension["value"], let unit = dimension["unit"] as? String { return "\(number)\(unit)" }
         return String(describing: value)
     }
+    // CSS rem values use the standard 16px root because repository tokens do not
+    // carry a runtime document's computed root font size.
+    static func lengthPixels(_ value: String, rootFontSize: Double = 16, allowUnitless: Bool = false) -> Double? {
+        guard rootFontSize.isFinite, rootFontSize > 0 else { return nil }
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let match = TokenParser.matches(#"^([+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+))(px|rem)?$"#, text).first,
+           let number = Double(match[1]), number.isFinite,
+           !match[2].isEmpty || number == 0 || allowUnitless {
+            let pixels = number * (match[2] == "rem" ? rootFontSize : 1)
+            return pixels.isFinite ? pixels : nil
+        }
+        if let match = TokenParser.matches(#"^calc\(([^()]+?)\s+([+-])\s+([^()]+)\)$"#, text).first,
+           let lhs = lengthPixels(match[1], rootFontSize: rootFontSize, allowUnitless: allowUnitless),
+           let rhs = lengthPixels(match[3], rootFontSize: rootFontSize, allowUnitless: allowUnitless) {
+            let pixels = lhs + (match[2] == "+" ? rhs : -rhs)
+            return pixels.isFinite ? pixels : nil
+        }
+        return nil
+    }
+    static func sizeLabel(_ value: String, rootFontSize: Double = 16) -> String? {
+        guard let pixels = lengthPixels(value, rootFontSize: rootFontSize) else { return nil }
+        func number(_ value: Double) -> String {
+            (value == 0 ? 0 : value).formatted(.number.grouping(.never).precision(.fractionLength(0...6)).locale(Locale(identifier: "en_US_POSIX")))
+        }
+        return "\(number(pixels))px · \(number(pixels / rootFontSize))rem"
+    }
     static func fontSizeLabel(_ value: String, rootFontSize: Double = 16) -> String {
-        guard let match = TokenParser.matches(#"^\s*([0-9]*\.?[0-9]+)rem\s*$"#, value).first,
-              let rem = Double(match[1]), rootFontSize.isFinite, rootFontSize > 0 else { return value }
-        let pixels = (rem * rootFontSize).formatted(.number.precision(.fractionLength(0...2)))
-        return "\(value) (\(pixels)px)"
+        sizeLabel(value, rootFontSize: rootFontSize) ?? value
     }
     static func definition(_ token: DesignToken, tokens: [DesignToken]) -> String {
         if let color = colorPresentation(token, tokens: tokens) { return color.subtitle }
         let value = resolved(token, tokens: tokens)
         if let properties = typography(token, tokens: tokens) {
-            let parts = [property(properties["fontSize"]).map { fontSizeLabel($0) }, property(properties["fontWeight"]).map(weightName), property(properties["letterSpacing"]).map { "Spacing \($0)" }, property(properties["lineHeight"]).map { "Line height \($0)" }, property(properties["fontFamily"])].compactMap { $0 }
+            let parts = [property(properties["fontSize"]).map { fontSizeLabel($0) }, property(properties["fontWeight"]).map(weightName), property(properties["letterSpacing"]).map { "Spacing \(fontSizeLabel($0))" }, property(properties["lineHeight"]).map { "Line height \(fontSizeLabel($0))" }, property(properties["fontFamily"])].compactMap { $0 }
             if !parts.isEmpty { return parts.joined(separator: " · ") }
         }
         if token.name.contains("weight") { return weightName(value) }
+        let isDimension = ["dimension", "radius", "spacing", "sizing", "typography"].contains(token.kind.lowercased())
+            || ["radius", "size", "spacing", "width", "height", "gap"].contains(where: token.name.contains)
+        if (value.contains("px") || value.contains("rem") || isDimension), let label = sizeLabel(value) { return label }
+        if let dimension = typography(value), dimension["unit"] != nil,
+           let raw = property(dimension), let label = sizeLabel(raw) { return label }
         if let match = TokenParser.matches(#"^var\((--[\w-]+)\)$|^\{([\w.-]+)\}$"#, token.value).first {
             let alias = (match[1].isEmpty ? match[2] : String(match[1].dropFirst(2))).replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: ".", with: " ").capitalized
             let isFontSize = token.name.contains("font-size") || token.name.hasPrefix("--text-") && !token.name.contains("--line-height")
@@ -167,24 +195,10 @@ enum TokenPreview {
         return nil
     }
     static func radius(_ value: String) -> Double? {
-        func length(_ text: String) -> Double? {
-            guard let match = TokenParser.matches(#"^\s*(-?[0-9.]+)(px|rem)?\s*$"#, text).first, let n = Double(match[1]), n.isFinite else { return nil }
-            return n * (match[2] == "rem" ? 16 : 1)
-        }
-        if let n = length(value) { return max(0,n) }
-        if let m = TokenParser.matches(#"^calc\(([^()]+?)\s+([+-])\s+([^()]+)\)$"#, value).first, let a = length(m[1]), let b = length(m[3]) { return max(0,a + (m[2] == "+" ? b : -b)) }
-        return nil
+        lengthPixels(value, allowUnitless: true).map { max(0, $0) }
     }
 }
 
-struct RadiusCorner: Shape {
-    var radius: CGFloat
-    func path(in rect: CGRect) -> Path {
-        let r = min(max(radius,0),min(rect.width,rect.height)-2)
-        var p = Path(); p.move(to: CGPoint(x: 2,y: rect.maxY)); p.addLine(to: CGPoint(x: 2,y: 2+r))
-        p.addQuadCurve(to: CGPoint(x: 2+r,y: 2), control: CGPoint(x: 2,y: 2)); p.addLine(to: CGPoint(x: rect.maxX,y: 2)); return p
-    }
-}
 struct TokenBadge: View {
     let token: DesignToken
     var tokens: [DesignToken] = []
@@ -196,6 +210,7 @@ struct TokenBadge: View {
         let kind = token.kind.lowercased()
         let properties = TokenPreview.typography(token, tokens: tokens)
         let radius = TokenPreview.radius(value)
+        let isRadius = (kind == "radius" || token.name.contains("radius")) && radius != nil
         let isText = TokenPreview.isTextStyle(token)
         let color = TokenPreview.colorPresentation(token, tokens: tokens)
         ZStack(alignment: .topLeading) {
@@ -212,12 +227,8 @@ struct TokenBadge: View {
             } else if token.pickerSection == "Icons", value.count <= 3, !value.isEmpty {
                 Text(value).font(.system(size: size * 0.6)).foregroundStyle(Protegia.text)
                     .frame(width: size, height: size)
-            } else if (kind == "radius" || token.name.contains("radius")), let radius {
-                UnevenRoundedRectangle(topLeadingRadius: min(radius,size * 0.3)).fill(.white.opacity(0.8))
-                    .frame(width: size * 0.66, height: size * 0.66).offset(x: size * 0.4,y: size * 0.4)
-                RadiusCorner(radius: min(radius,size * 0.3)).stroke(Color.red,style: StrokeStyle(lineWidth: 1.3,lineCap: .round))
-                    .frame(width: size * 0.28,height: size * 0.28).offset(x: size * 0.4 - 2,y: size * 0.4 - 2)
-                Text("\(radius.formatted(.number.precision(.fractionLength(0...1))))px").font(.system(size: size * 0.16,weight: .semibold)).foregroundStyle(.red).padding(size * 0.14)
+            } else if isRadius {
+                Color.clear
             } else if isText {
                 let family = TokenPreview.property(properties?["fontFamily"]) ?? (token.name.contains("family") ? value : "")
                 let cleanFamily = family.split(separator: ",").first.map(String.init)?.trimmingCharacters(in: CharacterSet(charactersIn: " '\"")) ?? ""
@@ -235,7 +246,7 @@ struct TokenBadge: View {
             } else {
                 RoundedRectangle(cornerRadius: 5).fill(.white.opacity(0.14)).overlay(RoundedRectangle(cornerRadius: 5).stroke(.white.opacity(0.85),lineWidth: 1)).padding(size * 0.18)
             }
-        }.frame(width: badgeWidth,height: size).clipShape(RoundedRectangle(cornerRadius: size * 0.19))
+        }.frame(width: badgeWidth,height: size).clipShape(RoundedRectangle(cornerRadius: isRadius ? CGFloat(radius ?? 0) : size * 0.19))
             .help("\(token.name): \(TokenPreview.definition(token,tokens: tokens)) · \(token.source)")
     }
 }
