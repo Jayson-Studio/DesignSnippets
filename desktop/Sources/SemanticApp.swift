@@ -84,7 +84,8 @@ private struct MenuWindowContent: View {
         menuPanel.contentView = host
         updater = AppUpdater(model: model) { [weak self] in self?.closePanel() }
         model.reconcilePicker()
-        toggle()
+        // Launch quietly, including after Sparkle relaunches the app.
+        // The menu bar button opens the panel when requested.
     }
     func applicationDidBecomeActive(_ notification: Notification) { model?.returnedToApp() }
     private func installMainMenu() {
