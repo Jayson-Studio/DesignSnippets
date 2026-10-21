@@ -9,6 +9,7 @@ Source: https://design.protegia.io and the local Protegia repository, `src/style
 - Primary buttons: white fill, black text, 36 pt height, 8 pt radius (the current Button component uses rounded-md).
 - Cards and fields: 8 pt corners; panel/picker: 14 pt corners.
 - Lato Regular/Bold bundled under SIL Open Font License; 10/12/14/18/24/28 pt typography, with system monospace reserved for code references.
+- Caveat and Instrument Serif are bundled for token previews under their accompanying SIL Open Font Licenses.
 - Spacing: 8/12/16/24 pt, translated from the CSS pixel scale for the desktop interface.
 - Native adaptation: input focus uses the secondary text color for a visible outline; system keyboard focus and checkbox behavior are preserved. The app explicitly uses the dark Protegia theme.
 

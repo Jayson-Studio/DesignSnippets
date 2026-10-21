@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import CoreText
 
 final class ColorCacheProtocol: URLProtocol {
     static var handler: ((URLRequest) throws -> (Int, Data))?
@@ -18,6 +19,11 @@ final class ColorCacheProtocol: URLProtocol {
 
 @main struct PickerTests {
     @MainActor static func main() async {
+        for (file, family) in [("Caveat", "Caveat"), ("InstrumentSerif-Regular", "Instrument Serif")] {
+            let url = URL(fileURLWithPath: "desktop/Resources/Fonts/\(file).ttf")
+            precondition(CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil))
+            precondition(NSFont(name: family, size: 16)?.familyName == family)
+        }
         let testDefaults = UserDefaults(suiteName: "DesignSnippets.GitHubConfigurationTests")!
         let arguments = testDefaults.volatileDomain(forName: UserDefaults.argumentDomain)
         testDefaults.setVolatileDomain(arguments.merging(["githubClientID": "Iv1.stale", "githubAppSlug": "old-preview"]) { _, value in value }, forName: UserDefaults.argumentDomain)

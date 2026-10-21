@@ -6,7 +6,7 @@ import CoreText
     @MainActor static func main() throws {
         _ = NSApplication.shared
         NSApp.appearance = NSAppearance(named: .darkAqua)
-        for name in ["Lato-Regular", "Lato-Bold"] {
+        for name in ["Lato-Regular", "Lato-Bold", "Caveat", "InstrumentSerif-Regular"] {
             let url = URL(fileURLWithPath: "desktop/Resources/Fonts/\(name).ttf")
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }

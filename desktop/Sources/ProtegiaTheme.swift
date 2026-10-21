@@ -27,7 +27,7 @@ enum Protegia {
     static func color(_ r: Double, _ g: Double, _ b: Double) -> Color { Color(.sRGB, red: r / 255, green: g / 255, blue: b / 255, opacity: 1) }
     static func font(_ size: CGFloat, bold: Bool = false) -> Font { .custom(bold ? "Lato-Bold" : "Lato-Regular", fixedSize: size) }
     static func registerFonts() {
-        for name in ["Lato-Regular", "Lato-Bold"] {
+        for name in ["Lato-Regular", "Lato-Bold", "Caveat", "InstrumentSerif-Regular"] {
             if let url = Bundle.main.url(forResource: name, withExtension: "ttf", subdirectory: "Fonts") { CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil) }
         }
     }
