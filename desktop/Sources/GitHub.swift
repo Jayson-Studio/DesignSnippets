@@ -10,6 +10,8 @@ struct DeviceCode: Decodable {
 struct AccessGrant: Decodable {
     let access_token: String?
     let expires_in: Int?
+    let refresh_token: String?
+    let refresh_token_expires_in: Int?
     let error: String?
     let error_description: String?
 }
@@ -28,7 +30,7 @@ struct GitHubClient {
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else { throw SemanticError("GitHub returned an invalid response.") }
         if response.statusCode == 404 { throw SemanticError("GitHub could not find that file, branch, or repository. Check the path and repository access.") }
-        if response.statusCode == 401 { throw SemanticError("Your GitHub session expired. Disconnect and sign in again.") }
+        if response.statusCode == 401 { throw GitHubAuthenticationError.reconnect }
         if response.statusCode == 403 || response.statusCode == 429 { throw SemanticError("GitHub denied this request or the API limit was reached. Check repository access and try again later.") }
         guard (200..<300).contains(response.statusCode) else { throw SemanticError("GitHub request failed (\(response.statusCode)). Check that DesignSnippets is installed on this repository with Contents: read access.") }
         return try JSONDecoder().decode(type, from: data)
@@ -49,16 +51,24 @@ struct GitHubClient {
         return try JSONDecoder().decode(type, from: data)
     }
     func beginLogin(clientID: String) async throws -> DeviceCode {
-        try await oauth("device/code", parameters: ["client_id": clientID])
+        try await oauth("device/code", parameters: ["client_id": clientID, "scope": "offline_access"])
     }
     func awaitLogin(clientID: String, device: DeviceCode) async throws -> String {
+        try await awaitSession(clientID: clientID, device: device).accessToken
+    }
+    func refreshSession(clientID: String, refreshToken: String) async throws -> GitHubSession {
+        let grant: AccessGrant = try await oauth("oauth/access_token", parameters: ["client_id": clientID, "grant_type": "refresh_token", "refresh_token": refreshToken])
+        if ["bad_refresh_token", "expired_token", "invalid_grant"].contains(grant.error ?? "") { throw GitHubAuthenticationError.reconnect }
+        return try GitHubSession(grant: grant)
+    }
+    func awaitSession(clientID: String, device: DeviceCode) async throws -> GitHubSession {
         let deadline = Date().addingTimeInterval(TimeInterval(device.expires_in))
         var interval = max(device.interval, 5)
         while Date() < deadline {
             try await Task.sleep(nanoseconds: UInt64(interval) * 1_000_000_000)
             try Task.checkCancellation()
             let grant: AccessGrant = try await oauth("oauth/access_token", parameters: ["client_id": clientID, "device_code": device.device_code, "grant_type": "urn:ietf:params:oauth:grant-type:device_code"])
-            if let token = grant.access_token { return token }
+            if grant.access_token != nil { return try GitHubSession(grant: grant) }
             switch grant.error {
             case "authorization_pending": continue
             case "slow_down": interval += 5

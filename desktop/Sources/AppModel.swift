@@ -113,7 +113,10 @@ enum LocalDefinition {
     var stopMonitor: (() -> Void)?
     private var task: Task<Void, Never>?
     private var refreshAfterGitHub = false
-    private var token: String?
+    var githubSession: URLSession = .shared
+    private let connection: GitHubConnection
+    private var token: String? { connection.session?.accessToken }
+    private var syncTimer: Timer?
     private var displayedTokensByRepository: [Int: [DesignToken]] = [:]
     var chooseLocalCheckoutOverride: ((String?) -> String?)?
     var openEditorOverride: ((PreferredEditor, URL, Int, String) throws -> Void)?
@@ -248,7 +251,8 @@ enum LocalDefinition {
         ("Arc", "company.thebrowser.Browser"), ("TextEdit (for testing)", "com.apple.TextEdit")
     ]
     init(preview: Bool = false, info: [String: Any] = Bundle.main.infoDictionary ?? [:],
-         defaults: UserDefaults = .standard, cacheURL: URL? = nil) {
+         defaults: UserDefaults = .standard, cacheURL: URL? = nil, connection: GitHubConnection? = nil) {
+        self.connection = connection ?? GitHubConnection()
         self.defaults = defaults
         allowsDeveloperSetup = info["SemanticDeveloperSetupAllowed"] as? Bool ?? false
         clientID = (info["SemanticGitHubClientID"] as? String ?? (allowsDeveloperSetup ? defaults.string(forKey: "githubClientID") : nil) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -258,7 +262,7 @@ enum LocalDefinition {
         if let data = try? Data(contentsOf: self.cacheURL), let saved = try? JSONDecoder().decode([TokenIndex].self, from: data) { indices = saved }
         let saved = UserDefaults.standard.object(forKey: "activeRepository") as? Int
         activeID = indices.first(where: { $0.repository.id == saved })?.repository.id ?? indices.first?.repository.id
-        // GitHub credentials live only in memory. Each launch starts signed out.
+        // The app delegate restores Keychain credentials after startup setup.
     }
     func select(_ id: Int) { activeID = id; UserDefaults.standard.set(id, forKey: "activeRepository") }
     func saveConfiguration() {
@@ -278,21 +282,25 @@ enum LocalDefinition {
         task?.cancel(); busy = true; error = nil; status = "Starting GitHub sign-in…"
         task = Task {
             do {
-                let client = GitHubClient()
+                let client = GitHubClient(session: githubSession)
                 let code = try await client.beginLogin(clientID: clientID)
                 try Task.checkCancellation()
                 deviceCode = code; status = "Enter the code on GitHub to connect."
                 // A fixed GitHub URL prevents an unexpected auth response from opening arbitrary hosts.
                 NSWorkspace.shared.open(URL(string: "https://github.com/login/device")!)
-                let accessToken = try await client.awaitLogin(clientID: clientID, device: code)
+                let session = try await client.awaitSession(clientID: clientID, device: code)
                 try Task.checkCancellation()
-                token = accessToken; deviceCode = nil
+                try connection.save(session, clientID: clientID)
+                deviceCode = nil
                 try await loadRepositories()
-                if needsColorRefresh {
-                    do { try await refreshCachedColors(using: GitHubClient(token: accessToken)) }
+                if !indices.isEmpty {
+                    do {
+                        try await syncImportedProjects(using: authenticatedClient())
+                        screen = "home"
+                    }
                     catch is CancellationError { throw CancellationError() }
                     catch {
-                        self.error = "Could not refresh cached color previews. \(error.localizedDescription)"
+                        handleConnectionError(error)
                         status = "Cached definitions are unchanged."
                         screen = "home"
                     }
@@ -301,17 +309,74 @@ enum LocalDefinition {
                 status = account == nil ? "" : "Color refresh canceled. Cached definitions are unchanged."
                 if account != nil { screen = "home" }
             }
-            catch { self.error = error.localizedDescription }
+            catch { handleConnectionError(error) }
             busy = false; deviceCode = nil
         }
     }
-    private func loadRepositories() async throws {
+    private func loadRepositories(showProjects: Bool = true) async throws {
         status = "Loading your GitHub projects…"
-        let client = GitHubClient(token: token)
+        let client = try await authenticatedClient()
         let user: GitHubUser = try await client.request("/user")
         let repos = try await client.repositories()
         try Task.checkCancellation()
-        account = user.login; repositories = repos; status = ""; screen = "projects"
+        account = user.login; repositories = repos; status = ""
+        if showProjects { screen = "projects" }
+    }
+    private func authenticatedClient() async throws -> GitHubClient {
+        GitHubClient(token: try await connection.accessToken(clientID: clientID, client: GitHubClient(session: githubSession)), session: githubSession)
+    }
+    private func handleConnectionError(_ problem: Error) {
+        if problem is GitHubAuthenticationError {
+            do { try connection.disconnect(clientID: clientID) }
+            catch { self.error = error.localizedDescription; return }
+            account = nil; repositories = []
+        }
+        error = problem.localizedDescription
+    }
+    func startGitHubConnection() {
+        guard syncTimer == nil, !clientID.isEmpty else { return }
+        do { try connection.restore(clientID: clientID) }
+        catch { self.error = error.localizedDescription }
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.automaticallySync() }
+        }
+        automaticallySync()
+    }
+    func stopGitHubConnection() {
+        syncTimer?.invalidate(); syncTimer = nil
+        task?.cancel()
+    }
+    func automaticallySync() {
+        guard !busy, token != nil else { return }
+        busy = true
+        task = Task {
+            defer { busy = false }
+            do {
+                try await loadRepositories(showProjects: false)
+                try await syncImportedProjects(using: authenticatedClient())
+                error = nil
+            } catch is CancellationError { }
+            catch {
+                if error is GitHubAuthenticationError { handleConnectionError(error) }
+                status = "Automatic sync paused. Cached definitions are still available."
+            }
+        }
+    }
+    func syncImportedProjects(using client: GitHubClient) async throws {
+        // Keep successful projects if a later project fails; never replace a cache on failure.
+        for old in indices where old.repository.id != 0 {
+            let paths = old.sourceFiles ?? Array(Set(old.tokens.map(\.source))).sorted()
+            guard !paths.isEmpty else { continue }
+            var updated = try await client.index(old.repository, paths: paths) { message in
+                await MainActor.run { self.status = message }
+            }
+            try Task.checkCancellation()
+            updated.pickerTabs = (old.pickerTabs ?? []).filter { paths.contains($0.path) }
+            let saved = indices.map { $0.repository.id == old.repository.id ? updated : $0 }
+            try persist(saved)
+            indices = saved
+        }
+        status = "Projects are up to date."
     }
     func refreshCachedColors(using client: GitHubClient) async throws {
         guard let old = activeIndex else { return }
@@ -334,7 +399,7 @@ enum LocalDefinition {
         task = Task {
             do { try await loadRepositories() }
             catch is CancellationError { }
-            catch { self.error = error.localizedDescription }
+            catch { handleConnectionError(error) }
             busy = false
         }
     }
@@ -398,7 +463,7 @@ enum LocalDefinition {
         task?.cancel(); busy = true; error = nil; status = "Opening selected token files…"
         task = Task {
             do {
-                var index = try await GitHubClient(token: token).index(repo, paths: paths) { message in
+                var index = try await authenticatedClient().index(repo, paths: paths) { message in
                     await MainActor.run { self.status = message }
                 }
                 try Task.checkCancellation()
@@ -414,7 +479,8 @@ enum LocalDefinition {
                 status = "Sync canceled. Previous tokens are unchanged."
                 completion?(.failure(CancellationError()))
             } catch {
-                if let completion { completion(.failure(error)) } else { self.error = error.localizedDescription }
+                handleConnectionError(error)
+                completion?(.failure(error))
             }
             busy = false
         }
@@ -423,7 +489,9 @@ enum LocalDefinition {
     func cancelPickerTabImport() { task?.cancel() }
     func disconnect() {
         task?.cancel(); pausePicker()
-        token = nil; account = nil; repositories = []; deviceCode = nil
+        do { try connection.disconnect(clientID: clientID) }
+        catch { self.error = error.localizedDescription; busy = false; return }
+        account = nil; repositories = []; deviceCode = nil
         // Disconnect also clears repository definitions so private metadata is not retained.
         indices = []; activeID = nil; try? FileManager.default.removeItem(at: cacheURL)
         status = "GitHub disconnected and cached definitions cleared."; screen = "home"; busy = false

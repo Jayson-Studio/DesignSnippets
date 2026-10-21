@@ -84,6 +84,7 @@ private struct MenuWindowContent: View {
         menuPanel.contentView = host
         updater = AppUpdater(model: model) { [weak self] in self?.closePanel() }
         model.reconcilePicker()
+        model.startGitHubConnection()
         // Launch quietly, including after Sparkle relaunches the app.
         // The menu bar button opens the panel when requested.
     }
@@ -157,7 +158,7 @@ private struct MenuWindowContent: View {
     }
     @objc private func checkForUpdates() { model.checkForUpdates?() }
     @objc private func quit() { NSApp.terminate(nil) }
-    func applicationWillTerminate(_ notification: Notification) { picker.stop() }
+    func applicationWillTerminate(_ notification: Notification) { model.stopGitHubConnection(); picker.stop() }
 }
 @main struct SemanticApp {
     @MainActor static func main() {

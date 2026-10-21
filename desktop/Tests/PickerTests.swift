@@ -19,6 +19,7 @@ final class ColorCacheProtocol: URLProtocol {
 
 @main struct PickerTests {
     @MainActor static func main() async {
+        try! await testPersistentGitHubConnection()
         for (file, family) in [("Caveat", "Caveat"), ("InstrumentSerif-Regular", "Instrument Serif")] {
             let url = URL(fileURLWithPath: "desktop/Resources/Fonts/\(file).ttf")
             precondition(CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil))
