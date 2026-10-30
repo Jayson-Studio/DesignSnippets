@@ -156,6 +156,17 @@ import CoreText
             vectorPicker.navigate(.up)
             try render(PickerView(state: vectorPicker), name: "token-picker-focused-layout-" + mode)
         }
+        vectorPicker.query = ""
+        vectorPicker.tokens = (0..<30).map {
+            DesignToken(name: String(format: "ArrowIcon%02d", $0), value: "Lucide semantic icon", kind: "Icon", source: "icons.tsx", iconSVG: IconArtwork.bundled("lucide:ArrowRight"))
+        }
+        vectorPicker.selectSection("Icons")
+        try render(PickerView(state: vectorPicker), name: "token-picker-scrolling-grid") {
+            vectorPicker.navigate(.up)
+            vectorPicker.navigate(.down)
+            vectorPicker.navigate(.right)
+        }
+        print("Scrolling grid: \(vectorPicker.columnCount) columns at \(vectorPicker.gridContentWidth)pt; selected \(vectorPicker.selected)")
         print("Rendered onboarding, GitHub setup, preferences, and token picker.")
     }
 }

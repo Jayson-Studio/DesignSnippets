@@ -88,13 +88,7 @@ enum PickerNavigationDirection { case up, down, left, right }
 
 enum PickerDisplayLayout: Int, CaseIterable {
     case list = 1, twoColumns = 2, adaptive = 3
-    var columns: [GridItem] {
-        switch self {
-        case .list: []
-        case .twoColumns: Array(repeating: GridItem(.flexible(minimum: 48), spacing: 8), count: 2)
-        case .adaptive: [GridItem(.adaptive(minimum: 48), spacing: 8)]
-        }
-    }
+
 }
 
 enum TabCreationStep: Equatable { case title, source }
@@ -216,11 +210,15 @@ enum PickerSettingsSection: Hashable {
         displayLayout = PickerDisplayLayout(rawValue: defaults.integer(forKey: layoutPreferenceKey))
             ?? PickerDisplayLayout(rawValue: defaults.integer(forKey: "pickerDisplayLayout")) ?? .list
     }
+    @Published var gridContentWidth: CGFloat = PickerLayout.width - 28
+    var gridColumns: [GridItem] {
+        Array(repeating: GridItem(.flexible(minimum: 0), spacing: 8), count: columnCount)
+    }
     var columnCount: Int {
         switch displayLayout {
         case .list: 1
         case .twoColumns: 2
-        case .adaptive: max(1, Int((PickerLayout.width - 28 + 8) / (48 + 8)))
+        case .adaptive: max(1, Int((gridContentWidth + 8) / (48 + 8)))
         }
     }
     func navigate(_ direction: PickerNavigationDirection, pointer: CGPoint? = nil) {
@@ -545,11 +543,19 @@ struct PickerView: View {
                                 .font(Protegia.font(11)).foregroundStyle(Protegia.tertiary)
                         }.multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(30)
                     } else if state.usesIconGrid {
-                        LazyVGrid(columns: state.displayLayout.columns, spacing: 8) {
+                        LazyVGrid(columns: state.gridColumns, spacing: 8) {
                             ForEach(Array(matches.enumerated()), id: \.element.id) { index, token in
                                 entry(token, index: index, grid: true)
                             }
-                        }.padding(.horizontal, 14).padding(.vertical, 4)
+                        }
+                        .background {
+                            GeometryReader { geometry in
+                                Color.clear
+                                    .onAppear { state.gridContentWidth = geometry.size.width }
+                                    .onChange(of: geometry.size.width) { _, width in state.gridContentWidth = width }
+                            }
+                        }
+                        .padding(.horizontal, 14).padding(.vertical, 4)
                     } else {
                         LazyVStack(spacing: 8) {
                             ForEach(Array(matches.enumerated()), id: \.element.id) { index, token in

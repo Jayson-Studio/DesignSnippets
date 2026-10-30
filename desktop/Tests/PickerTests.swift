@@ -402,6 +402,29 @@ final class ColorCacheProtocol: URLProtocol {
         precondition(navigation.selected == 7)
         navigation.navigate(.down)
         precondition(!navigation.itemsFocused)
+        // A visible scrollbar narrows the adaptive grid from seven columns to six.
+        navigation.gridContentWidth = 377
+        precondition(navigation.columnCount == 6 && navigation.gridColumns.count == 6)
+        navigation.tokens = (0..<18).map { DesignToken(name: String(format: "item-%02d", $0), value: "x", kind: "Token", source: "theme.css") }
+        navigation.navigate(.up)
+        for column in 1..<6 {
+            navigation.navigate(.right)
+            precondition(navigation.selected == column)
+        }
+        navigation.navigate(.right)
+        precondition(navigation.selected == 5)
+        navigation.navigate(.down)
+        precondition(navigation.selected == 11)
+        for column in stride(from: 10, through: 6, by: -1) {
+            navigation.navigate(.left)
+            precondition(navigation.selected == column)
+        }
+        navigation.navigate(.down)
+        precondition(navigation.selected == 12)
+        navigation.navigate(.up)
+        precondition(navigation.selected == 6)
+        navigation.gridContentWidth = 392
+        precondition(navigation.columnCount == 7 && navigation.gridColumns.count == 7)
         let layoutRepoA = Repository(id: 800, full_name: "test/a", default_branch: "main", private: false)
         let layoutRepoB = Repository(id: 801, full_name: "test/b", default_branch: "main", private: false)
         let layoutIndexA = TokenIndex(repository: layoutRepoA, tokens: navigation.tokens, syncedAt: Date(), revision: "one")

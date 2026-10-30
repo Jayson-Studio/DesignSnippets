@@ -199,7 +199,7 @@ struct TokenBadge: View {
         let isText = TokenPreview.isTextStyle(token)
         let color = TokenPreview.colorPresentation(token, tokens: tokens)
         ZStack(alignment: .topLeading) {
-            if kind != "color" { Color.white.opacity(0.19) }
+            if kind != "color" && kind != "icon" && token.iconSVG == nil { Color.white.opacity(0.19) }
             if kind == "color" {
                 Circle().fill(color.map { Color(nsColor: $0.color) } ?? Color.clear)
                     .overlay(Circle().stroke(.white.opacity(color == nil ? 0.5 : 0.14), lineWidth: 1))
