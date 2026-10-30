@@ -418,6 +418,24 @@ final class ColorCacheProtocol: URLProtocol {
         oldIcon.iconSVG = exampleSVG
         iconMigration.indices = [TokenIndex(repository: cachedRepo, tokens: [oldIcon], syncedAt: Date(), revision: "icons")]
         precondition(!iconMigration.needsIconRefresh)
+        let liveIcons = PickerState()
+        iconMigration.indices[0].pickerTabs = [PickerTab(title: "Icons", path: "icons.tsx")]
+        liveIcons.bindGitHub(iconMigration)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        liveIcons.selectSection("Icons"); liveIcons.query = "User"
+        oldIcon.iconSVG = nil
+        var staleIconIndex = TokenIndex(repository: cachedRepo, tokens: [oldIcon], syncedAt: Date(), revision: "stale-icons")
+        staleIconIndex.pickerTabs = [PickerTab(title: "Icons", path: "icons.tsx")]
+        iconMigration.indices = [staleIconIndex]
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        precondition(liveIcons.missingIconArtwork && liveIcons.matches.first?.iconSVG == nil)
+        oldIcon.iconSVG = exampleSVG
+        var refreshedIconIndex = TokenIndex(repository: cachedRepo, tokens: [oldIcon], syncedAt: Date(), revision: "new-icons")
+        refreshedIconIndex.pickerTabs = staleIconIndex.pickerTabs
+        iconMigration.indices = [refreshedIconIndex]
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        precondition(!liveIcons.missingIconArtwork && liveIcons.matches.first?.iconSVG == exampleSVG)
+        precondition(liveIcons.activeSection == "Icons" && liveIcons.query == "User")
         let previewKeys = PickerState()
         previewKeys.tokens = state.tokens + [DesignToken(name: "--icon-check", value: "✓", kind: "Icon", source: "icons.json")]
         previewKeys.tabDefinitions = [iconTab]

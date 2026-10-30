@@ -58,10 +58,6 @@ struct PreviewSandbox: View {
             }
             picker.cancelTabImport = { [weak model] in model?.cancelPickerTabImport() }
         }
-        .onReceive(model.$indices) { indices in
-            picker.updateIndex(indices.first(where: { $0.repository.id == model.activeID }))
-        }
-        .onChange(of: model.activeID) { _, _ in picker.updateIndex(model.activeIndex) }
         .onChange(of: model.checkoutPath) { _, _ in picker.updateIndex(model.activeIndex) }
     }
 }

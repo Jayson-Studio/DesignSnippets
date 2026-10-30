@@ -109,6 +109,9 @@ enum PickerSettingsSection: Hashable {
     @Published private(set) var githubError: String?
     var connectGitHub: (() -> Void)?
     private var githubObservation: AnyCancellable?
+    private var indexObservation: AnyCancellable?
+    var refreshPreviews: (() -> Void)?
+    var missingIconArtwork: Bool { matches.contains { $0.kind == "Icon" && $0.iconSVG == nil && ["Lucide semantic icon", "Provider icon", "Git Octicon"].contains($0.value) } }
     func bindGitHub(_ model: AppModel) {
         func refresh(_ state: PickerState, _ model: AppModel) {
             let wasConnected = state.githubConnected
@@ -119,6 +122,15 @@ enum PickerSettingsSection: Hashable {
             if model.isGitHubConnected && !wasConnected { state.tabError = nil }
         }
         refresh(self, model)
+        indexObservation = model.$indices.combineLatest(model.$activeID)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] indices, activeID in
+                self?.updateIndex(indices.first { $0.repository.id == activeID })
+            }
+        refreshPreviews = { [weak model] in
+            guard let model, model.isGitHubConnected, let repo = model.activeIndex?.repository else { return }
+            model.refreshTokens(repo)
+        }
         connectGitHub = { [weak model] in model?.connectGitHub() }
         githubObservation = model.objectWillChange.sink { [weak self, weak model] in
             Task { @MainActor in
@@ -425,6 +437,17 @@ struct PickerView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10).background(Protegia.destructive.opacity(0.1), in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
                     .padding(.horizontal, 14).padding(.bottom, 8)
+            }
+            if state.missingIconArtwork && !state.creatingTab && !state.showingSettings {
+                HStack {
+                    Text(state.githubConnected ? "Icon artwork needs a refresh." : "Connect GitHub in the app menu to load icon artwork.")
+                        .font(Protegia.font(11)).foregroundStyle(Protegia.secondary)
+                    Spacer(minLength: 8)
+                    if state.githubConnected {
+                        Button(state.githubBusy ? "Loading…" : "Refresh previews") { state.refreshPreviews?() }
+                            .buttonStyle(.plain).font(Protegia.font(11, bold: true)).disabled(state.githubBusy)
+                    }
+                }.padding(.horizontal, 14).padding(.bottom, 8)
             }
             ScrollViewReader { proxy in
                 ScrollView {

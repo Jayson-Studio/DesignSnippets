@@ -128,9 +128,15 @@ import CoreText
         picker.selectSection("Foundations")
         if let flag = CommandLine.arguments.firstIndex(of: "--token-fixture"), CommandLine.arguments.indices.contains(flag + 1) {
             let indices = try JSONDecoder().decode([TokenIndex].self, from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[flag + 1])))
-            picker.tokens = indices.first?.tokens ?? []
-            picker.query = "text-h3"
-            try render(PickerView(state: picker), name: "token-picker-source-typography")
+            let sourcePicker = PickerState()
+            sourcePicker.updateIndex(indices.first)
+            func argument(_ name: String, fallback: String) -> String {
+                guard let flag = CommandLine.arguments.firstIndex(of: name), CommandLine.arguments.indices.contains(flag + 1) else { return fallback }
+                return CommandLine.arguments[flag + 1]
+            }
+            sourcePicker.selectSection(argument("--section", fallback: "Foundations"))
+            sourcePicker.query = argument("--query", fallback: "text-h3")
+            try render(PickerView(state: sourcePicker), name: "token-picker-source-typography")
         }
         let vectorPicker = PickerState()
         vectorPicker.tokens = [("UserCircleIcon", "CircleUserRound"), ("UserGroupIcon", "UsersRound"), ("UserIcon", "UserRound")].map {
