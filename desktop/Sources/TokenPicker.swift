@@ -211,6 +211,7 @@ enum PickerSettingsSection: Hashable {
     var addTab: ((String, String) -> Void)?
     var beginTabEntry: (() -> Void)?
     var endTabEntry: (() -> Void)?
+    var didImportTab: (() -> Void)?
     var cancelTabImport: (() -> Void)?
     var sections: [String] {
         ["Foundations"] + tabDefinitions.map(\.title) + (creatingTab ? ["New tab"] : [])
@@ -231,8 +232,9 @@ enum PickerSettingsSection: Hashable {
     }
     func finishTab(_ tab: PickerTab) {
         creatingTab = false; tabCreationStep = .title; tabBusy = false; tabError = nil; tabTitle = ""; tabFilePath = ""
+        query = ""
         if tabDefinitions.contains(tab) { selectSection(tab.title) }
-        endTabEntry?()
+        didImportTab?()
     }
     func cancelTab() {
         if tabBusy { cancelTabImport?() }
@@ -407,6 +409,8 @@ struct PickerView: View {
     @ObservedObject var state: PickerState
     var allowsDragging = true
     var editableSearch = false
+    @Namespace private var tabSelection
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var tabTitleFocused: Bool
     @FocusState private var tabPathFocused: Bool
     var body: some View {
@@ -480,7 +484,9 @@ struct PickerView: View {
                                 Button { state.settingsSection = section } label: {
                                     Text(section.title).font(Protegia.font(12, bold: true)).fixedSize()
                                         .padding(.horizontal, 12).padding(.vertical, 10)
-                                        .background(state.settingsSection == section ? Protegia.level2 : .clear, in: Capsule())
+                                        .background {
+                                            if state.settingsSection == section { Capsule().fill(Protegia.level2).matchedGeometryEffect(id: "settings", in: tabSelection) }
+                                        }
                                 }.buttonStyle(.plain).id(section)
                                     .accessibilityAddTraits(state.settingsSection == section ? .isSelected : [])
                             }
@@ -489,7 +495,9 @@ struct PickerView: View {
                                 Button { state.selectSection(section, pointer: NSEvent.mouseLocation) } label: {
                                     Text(state.displayTitle(for: section)).font(Protegia.font(12, bold: true)).fixedSize()
                                         .padding(.horizontal, 12).padding(.vertical, 10)
-                                        .background(state.activeSection == section ? Protegia.level2 : .clear, in: Capsule())
+                                        .background {
+                                            if state.activeSection == section { Capsule().fill(Protegia.level2).matchedGeometryEffect(id: "tabs", in: tabSelection) }
+                                        }
                                 }.buttonStyle(.plain).id(section)
                                     .accessibilityAddTraits(state.activeSection == section ? .isSelected : [])
                             }
@@ -500,7 +508,10 @@ struct PickerView: View {
                                 .disabled(state.creatingTab || state.tabBusy).id("add-tab")
                         }
                     }.padding(.horizontal, 14).padding(.vertical, 10)
-                }.onChange(of: state.activeSection) { _, section in
+                }
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: state.activeSection)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: state.settingsSection)
+                .onChange(of: state.activeSection) { _, section in
                     if !state.showingSettings { proxy.scrollTo(section == "New tab" ? "add-tab" : section, anchor: .trailing) }
                 }.onChange(of: state.settingsSection) { _, section in
                     if state.showingSettings { proxy.scrollTo(section, anchor: .trailing) }
@@ -1015,6 +1026,23 @@ struct PickerDismissalGate {
             self.panel?.makeKeyAndOrderFront(nil)
         }
         state.cancelTabImport = { [weak self] in self?.model.cancelPickerTabImport() }
+        state.didImportTab = { [weak self] in
+            guard let self else { return }
+            // Importing may involve browser focus changes. Keep browsing open but
+            // discard the old editor replacement range rather than inserting into stale text.
+            self.pendingOutsideDismiss?.cancel(); self.pendingOutsideDismiss = nil
+            self.dismissalGate.cancel()
+            self.beginTask?.cancel(); self.beginTask = nil; self.pendingTrigger = false
+            self.target = nil; self.initialRange = nil; self.copyOnlyFallback = true
+            self.trackedSessionValid = false; self.state.canInsert = false
+            self.panel?.acceptsInput = false
+            self.panel?.resignKey()
+            self.panel?.orderFrontRegardless()
+            if let owner = NSRunningApplication(processIdentifier: self.pid) {
+                self.returningToOwner = true
+                _ = owner.activate(options: [])
+            }
+        }
         state.endTabEntry = { [weak self] in
             guard let self else { return }
             self.dismiss()

@@ -47,6 +47,7 @@ app="$staging/DesignSnippets.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$output/module-cache"
 cp -R desktop/Resources/Fonts "$app/Contents/Resources/"
 cp -R desktop/Resources/DesignSystem "$app/Contents/Resources/"
+cp -R desktop/Resources/Icons "$app/Contents/Resources/"
 bash desktop/scripts/fetch-sparkle.sh
 sparkle="$output/dependencies/Sparkle-2.10.0"
 mkdir -p "$app/Contents/Frameworks"

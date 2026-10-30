@@ -111,7 +111,7 @@ Add an Icons tab and enter a repository-relative `.ts`/`.tsx` path or paste a Gi
 
 The Carrot UI unified catalog adapter follows its semantic icon module, reads the adjacent provider exports and package manifest at the same pinned commit, and combines all semantic exports (including filled variants), listed provider variants, and the catalog's Git Octicons. The Git export-name metadata is bundled from `react-icons@5.6.0`; a different dependency version fails explicitly rather than silently importing an incomplete catalog. No TypeScript is executed and no npm dependency is fetched at runtime. Each source is limited to 1 MB.
 
-Icons import as searchable component names, grouped under the selected catalog file so the Icons tab and Refresh work normally. Choosing one inserts its exported name. React SVG artwork is not rendered; component icons use a readable name list. Concrete icon exports can also be imported directly; arbitrary dynamic JavaScript catalogs and wildcard barrel traversal are not supported.
+Icons import as searchable component names, grouped under the selected catalog file so the Icons tab and Refresh work normally. Choosing one inserts its exported name. Component icons show their actual SVG artwork beside the readable name. Lucide and Octicons geometry is bundled from pinned public libraries; provider paths are read from the selected repository and validated before conversion to SVG. Artwork is cached with the imported tokens for offline use. Existing name-only icon caches are refreshed after GitHub sign-in or with Refresh previews. Concrete icon exports can also be imported directly; arbitrary dynamic JavaScript catalogs and wildcard barrel traversal are not supported.
 
 ### Menu placement, updates, and GitHub sessions
 
@@ -120,3 +120,5 @@ Launching or updating the app leaves its menu closed. Open it explicitly with th
 macOS controls menu-bar availability across displays. Enable **System Settings → Desktop & Dock → Mission Control → Displays have separate Spaces**, then log out and back in, to use separate menu bars. Menu-bar space can also limit status-icon visibility.
 
 GitHub credentials remain session-only. Updates restart the app signed out, while cached projects and snippets remain available. Cached projects are labeled accordingly. The main menu and icon-import form use the same authenticated-session state. The import form offers device sign-in without clearing its title or source path; once connected, click Add file. Expired sessions clear the account status without deleting cached definitions.
+
+Successful tab imports keep the picker open, select the new tab, and clear the previous search. Cancel still closes tab entry. After an import the old editor replacement range is discarded; choosing a token copies it until you open a fresh typing session. The active tab pill slides when switching by keyboard or click, with animation disabled when Reduce Motion is enabled.

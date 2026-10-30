@@ -132,6 +132,14 @@ import CoreText
             picker.query = "text-h3"
             try render(PickerView(state: picker), name: "token-picker-source-typography")
         }
+        let vectorPicker = PickerState()
+        vectorPicker.tokens = [("UserCircleIcon", "CircleUserRound"), ("UserGroupIcon", "UsersRound"), ("UserIcon", "UserRound")].map {
+            DesignToken(name: $0.0, value: "Lucide semantic icon", kind: "Icon", source: "icons.tsx", iconSVG: IconArtwork.bundled("lucide:" + $0.1))
+        }
+        vectorPicker.tabDefinitions = [PickerTab(title: "Icons", path: "icons.tsx")]
+        vectorPicker.selectSection("Icons")
+        vectorPicker.query = "user"
+        try render(PickerView(state: vectorPicker), name: "token-picker-vector-icons")
         print("Rendered onboarding, GitHub setup, preferences, and token picker.")
     }
 }

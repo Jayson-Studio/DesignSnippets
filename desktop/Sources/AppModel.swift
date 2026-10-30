@@ -245,6 +245,10 @@ enum LocalDefinition {
         process.terminationHandler = { _ in }
         try process.run()
     }
+    var needsIconRefresh: Bool {
+        activeIndex?.tokens.contains { $0.kind == "Icon" && $0.iconSVG == nil && ["Lucide semantic icon", "Provider icon", "Git Octicon"].contains($0.value) } == true
+    }
+    var needsPreviewRefresh: Bool { needsColorRefresh || needsIconRefresh }
     var needsColorRefresh: Bool {
         guard let index = activeIndex, index.repository.id != 0, index.colorReferencesScanned != true else { return false }
         return index.tokens.contains { $0.kind.lowercased() == "color" && $0.value.contains("var(") }
@@ -296,12 +300,12 @@ enum LocalDefinition {
                 try Task.checkCancellation()
                 token = accessToken; deviceCode = nil
                 try await loadRepositories()
-                if needsColorRefresh {
+                if needsPreviewRefresh {
                     do { try await refreshCachedColors(using: GitHubClient(token: accessToken)) }
                     catch is CancellationError { throw CancellationError() }
                     catch {
                         if error is GitHubAuthenticationError { invalidateGitHubSession() }
-                        self.error = "Could not refresh cached color previews. \(error.localizedDescription)"
+                        self.error = "Could not refresh cached previews. \(error.localizedDescription)"
                         status = "Cached definitions are unchanged."
                         screen = "home"
                     }
@@ -326,7 +330,7 @@ enum LocalDefinition {
         guard let old = activeIndex else { return }
         let paths = old.sourceFiles ?? Array(Set(old.tokens.map(\.source))).sorted()
         guard !paths.isEmpty else { throw SemanticError("Choose the project's token files and refresh them.") }
-        status = "Updating cached color previews…"
+        status = "Updating cached previews…"
         var updated = try await client.index(old.repository, paths: paths) { message in
             await MainActor.run { self.status = message }
         }
@@ -335,7 +339,7 @@ enum LocalDefinition {
         let saved = indices.map { $0.repository.id == old.repository.id ? updated : $0 }
         try persist(saved)
         indices = saved
-        status = "Updated color previews for \(old.repository.full_name)."
+        status = "Updated previews for \(old.repository.full_name)."
         screen = "home"
     }
     func refreshRepositories() {

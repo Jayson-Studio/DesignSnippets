@@ -209,6 +209,9 @@ struct TokenBadge: View {
                     Image(systemName: "questionmark").font(.system(size: size * 0.34, weight: .medium))
                         .foregroundStyle(Protegia.tertiary).frame(width: size, height: size)
                 }
+            } else if let svg = token.iconSVG, let image = IconPreviewCache.image(svg) {
+                Image(nsImage: image).resizable().renderingMode(.template).scaledToFit()
+                    .foregroundStyle(Protegia.text).padding(size * 0.16)
             } else if token.pickerSection == "Icons", value.count <= 3, !value.isEmpty {
                 Text(value).font(.system(size: size * 0.6)).foregroundStyle(Protegia.text)
                     .frame(width: size, height: size)
@@ -237,5 +240,21 @@ struct TokenBadge: View {
             }
         }.frame(width: badgeWidth,height: size).clipShape(RoundedRectangle(cornerRadius: size * 0.19))
             .help("\(token.name): \(TokenPreview.definition(token,tokens: tokens)) · \(token.source)")
+    }
+}
+
+
+@MainActor enum IconPreviewCache {
+    private static let images: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 256
+        return cache
+    }()
+    static func image(_ svg: String) -> NSImage? {
+        let key = svg as NSString
+        if let cached = images.object(forKey: key) { return cached }
+        guard svg.utf8.count <= 100_000, let image = NSImage(data: Data(svg.utf8)) else { return nil }
+        images.setObject(image, forKey: key)
+        return image
     }
 }

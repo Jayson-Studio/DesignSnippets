@@ -129,6 +129,15 @@ final class MockProtocol: URLProtocol {
         }
         let normalized = try GitHubClient.filePaths([" src/styles/theme.css ", "", "src/styles/theme.css", "design tokens.json"])
         try check(normalized == ["src/styles/theme.css", "design tokens.json"], "Normalize and deduplicate file paths")
+        let svgSources = IconArtwork.fromSources(semantic: #"createSemanticIcon("UserIcon", UserRound); createSemanticIcon("StarFilledIcon", Star, true); createSemanticIcon("HelpIcon", CircleHelp)"#,
+            providers: #"const SERVICE_PATH = "M0 0h24v24H0z"; createProviderIcon("ServiceIcon", SERVICE_PATH); createProviderOutlineIcon("ServiceOutlineIcon", SERVICE_PATH)"#)
+        try check(svgSources.count == 5 && svgSources["StarFilledIcon"]!.contains("fill=\"white\""), "Real vector paths, aliases, and filled variants")
+        try check(svgSources["ServiceOutlineIcon"]!.contains("stroke-width=\"1.5\""), "Provider outline geometry")
+        let hostile = IconArtwork.fromSources(semantic: "", providers: #"const BAD_PATH = "<script>alert(1)</script>"; createProviderIcon("BadIcon", BAD_PATH)"#)
+        try check(hostile.isEmpty, "Reject non-path markup in provider geometry")
+        let illustrated = DesignToken(name: "UserIcon", value: "React icon", kind: "Icon", source: "icons.tsx", iconSVG: svgSources["UserIcon"])
+        let decodedIcon = try JSONDecoder().decode(DesignToken.self, from: JSONEncoder().encode(illustrated))
+        try check(decodedIcon.iconSVG == illustrated.iconSVG, "Artwork persists in the token cache")
         let iconExports = """
         // export const FakeIcon = nope
         export const SearchIcon = createIcon()

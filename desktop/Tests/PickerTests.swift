@@ -396,12 +396,28 @@ final class ColorCacheProtocol: URLProtocol {
         precondition(requestedTitle == "Components" && requestedPath == "src/components/button-tokens.json" && tabs.tabBusy)
         let componentsTab = PickerTab(title: requestedTitle!, path: requestedPath!)
         tabs.tabDefinitions.append(componentsTab)
+        var importedTabRemainsOpen = false
+        var dismissedAfterImport = false
+        tabs.didImportTab = { importedTabRemainsOpen = true }
+        tabs.endTabEntry = { dismissedAfterImport = true }
+        tabs.query = "old search"
         tabs.finishTab(componentsTab)
+        precondition(importedTabRemainsOpen && !dismissedAfterImport && tabs.query.isEmpty)
         precondition(!tabs.creatingTab && tabs.tabCreationStep == .title && tabs.activeSection == "Components" && tabs.tabTitle.isEmpty)
         precondition(tabs.sections == ["Foundations", "Icons", "Components"])
         precondition(PickerTab.title(for: "src/components/button-tokens.json", existing: [iconTab]) == "Button Tokens")
         precondition(PickerTab.title(for: "other/icons.css", existing: [iconTab]) == "Icons 2")
         // The Preview search field uses this handler for picker navigation and selection.
+        let exampleSVG = IconArtwork.bundled("lucide:UserRound")!
+        precondition(IconPreviewCache.image(exampleSVG) != nil)
+        let iconMigration = AppModel(preview: true)
+        var oldIcon = DesignToken(name: "UserIcon", value: "Lucide semantic icon", kind: "Icon", source: "icons.tsx")
+        iconMigration.indices = [TokenIndex(repository: cachedRepo, tokens: [oldIcon], syncedAt: Date(), revision: "icons")]
+        iconMigration.activeID = cachedRepo.id
+        precondition(iconMigration.needsIconRefresh && iconMigration.needsPreviewRefresh)
+        oldIcon.iconSVG = exampleSVG
+        iconMigration.indices = [TokenIndex(repository: cachedRepo, tokens: [oldIcon], syncedAt: Date(), revision: "icons")]
+        precondition(!iconMigration.needsIconRefresh)
         let previewKeys = PickerState()
         previewKeys.tokens = state.tokens + [DesignToken(name: "--icon-check", value: "✓", kind: "Icon", source: "icons.json")]
         previewKeys.tabDefinitions = [iconTab]

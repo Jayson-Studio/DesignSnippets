@@ -9,6 +9,7 @@ struct DesignToken: Codable, Identifiable, Equatable {
     let source: String
     var typography: [String: String]? = nil
     var section: String? = nil
+    var iconSVG: String? = nil
 
     var pickerSection: String {
         if let section, !section.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return section }
@@ -87,7 +88,8 @@ enum TokenParser {
     }
     static func parse(_ text: String, source: String) -> [DesignToken] {
         if ["ts", "tsx"].contains((source as NSString).pathExtension.lowercased()) {
-            return IconCatalog.exports(text).map { DesignToken(name: $0, value: "React icon", kind: "Icon", source: source) }
+            let artwork = IconArtwork.fromSources(semantic: text, providers: text)
+            return IconCatalog.exports(text).map { DesignToken(name: $0, value: "React icon", kind: "Icon", source: source, iconSVG: artwork[$0]) }
         }
         if source.lowercased().hasSuffix(".json") { return parseJSON(text, source: source) }
         let text = text.replacingOccurrences(of: #"/\*[\s\S]*?\*/"#, with: "", options: .regularExpression)
@@ -230,9 +232,10 @@ enum IconCatalog {
         guard !semanticNames.isEmpty, !providerNames.isEmpty, Set(providerNames).isSubset(of: availableProviders) else {
             throw SemanticError("Could not resolve all catalog icon exports. Previous tokens are unchanged.")
         }
+        let artwork = IconArtwork.fromSources(semantic: semantic, providers: providers)
         let groups = [(semanticNames, "Lucide semantic icon"), (providerNames, "Provider icon"), (octicons, "Git Octicon")]
         return TokenParser.unique(groups.flatMap { names, label in
-            names.map { DesignToken(name: $0, value: label, kind: "Icon", source: source) }
+            names.map { DesignToken(name: $0, value: label, kind: "Icon", source: source, iconSVG: artwork[$0] ?? IconArtwork.bundled("octicons:" + $0)) }
         })
     }
 }
@@ -250,5 +253,48 @@ enum StatusMenuPlacement {
         let x = min(max(anchor.midX - size.width / 2, visible.minX + 8), visible.maxX - size.width - 8)
         let y = min(max(anchor.minY - size.height - 2, visible.minY + 8), visible.maxY - size.height - 8)
         return CGRect(origin: CGPoint(x: x, y: y), size: size)
+    }
+}
+
+
+/// Only fixed library drawings and validated path geometry become SVG; repository code is never executed.
+enum IconArtwork {
+    private static func resource(_ name: String, extension ext: String) -> URL? {
+        if let url = Bundle.main.url(forResource: name, withExtension: ext, subdirectory: "Icons") { return url }
+        guard Bundle.main.bundleURL.pathExtension != "app" else { return nil }
+        return URL(fileURLWithPath: "desktop/Resources/Icons/\(name).\(ext)")
+    }
+    private static let library: [String: String] = {
+        guard let url = resource("artwork", extension: "json"), let data = try? Data(contentsOf: url),
+              let values = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return values
+    }()
+    static func bundled(_ name: String) -> String? {
+        if name == "lucide:RotateCwFadingClock", let url = resource("rotate-cw-fading-clock", extension: "svg") {
+            return (try? String(contentsOf: url, encoding: .utf8))?.replacingOccurrences(of: "currentColor", with: "white")
+        }
+        return library[name]
+    }
+    static func fromSources(semantic: String, providers: String) -> [String: String] {
+        var result: [String: String] = [:]
+        let clean = semantic.replacingOccurrences(of: #"/\*[\s\S]*?\*/"#, with: "", options: .regularExpression)
+        for match in TokenParser.matches(#"createSemanticIcon\(\s*\"([A-Za-z][A-Za-z0-9]*Icon)\"\s*,\s*([A-Za-z][A-Za-z0-9]*)(?:\s*,\s*(true|false))?\s*,?\s*\)"#, clean) {
+            if var svg = bundled("lucide:" + match[2]) {
+                if match[3] == "true" { svg = svg.replacingOccurrences(of: "fill=\"none\"", with: "fill=\"white\"") }
+                result[match[1]] = svg
+            }
+        }
+        var paths: [String: String] = [:]
+        for match in TokenParser.matches(#"\bconst\s+([A-Z][A-Z0-9_]*)\s*=\s*\"([MmZzLlHhVvCcSsQqTtAa0-9eE+.,\s-]+)\""#, providers) {
+            paths[match[1]] = match[2]
+        }
+        for match in TokenParser.matches(#"createProvider(Outline)?Icon\(\s*\"([A-Za-z][A-Za-z0-9]*Icon)\"\s*,\s*([A-Z][A-Z0-9_]*)\s*,?\s*\)"#, providers) {
+            guard let path = paths[match[3]] else { continue }
+            let outline = !match[1].isEmpty
+            let box = outline ? "-0.75 -0.75 25.5 25.5" : "0 0 24 24"
+            let style = outline ? "fill=\"none\" stroke=\"white\" stroke-width=\"1.5\" stroke-linejoin=\"round\"" : "fill=\"white\""
+            result[match[2]] = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"\(box)\" \(style)><path d=\"\(path)\"/></svg>"
+        }
+        return result
     }
 }

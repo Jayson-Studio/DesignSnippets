@@ -97,11 +97,11 @@ struct SemanticPanel: View {
                     }
                     HStack { Text("\(model.tokens.count) definitions · \(index.repository.id == 0 ? "Sample tokens" : index.repository.default_branch)"); Spacer(); if index.repository.id != 0 { Button { model.refreshTokens(index.repository) } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).disabled(model.busy) } }.font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
                 }.padding(13).background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.cardRadius))
-                if model.needsColorRefresh {
+                if model.needsPreviewRefresh {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Color previews need an updated token cache.")
+                        Text("Previews need an updated token cache.")
                             .font(Protegia.font(11, bold: true))
-                        Button(!model.isGitHubConnected ? "Connect GitHub to update colors" : "Refresh color previews") {
+                        Button(!model.isGitHubConnected ? "Connect GitHub to update previews" : "Refresh previews") {
                             if !model.isGitHubConnected { model.connectGitHub() }
                             else { model.refreshTokens(index.repository) }
                         }
