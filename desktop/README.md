@@ -112,3 +112,11 @@ Add an Icons tab and enter a repository-relative `.ts`/`.tsx` path or paste a Gi
 The Carrot UI unified catalog adapter follows its semantic icon module, reads the adjacent provider exports and package manifest at the same pinned commit, and combines all semantic exports (including filled variants), listed provider variants, and the catalog's Git Octicons. The Git export-name metadata is bundled from `react-icons@5.6.0`; a different dependency version fails explicitly rather than silently importing an incomplete catalog. No TypeScript is executed and no npm dependency is fetched at runtime. Each source is limited to 1 MB.
 
 Icons import as searchable component names, grouped under the selected catalog file so the Icons tab and Refresh work normally. Choosing one inserts its exported name. React SVG artwork is not rendered; component icons use a readable name list. Concrete icon exports can also be imported directly; arbitrary dynamic JavaScript catalogs and wildcard barrel traversal are not supported.
+
+### Menu placement, updates, and GitHub sessions
+
+Launching or updating the app leaves its menu closed. Open it explicitly with the menu-bar icon. Update checks dismiss both the menu and floating picker; menu placement uses the clicked display and rejects uninitialized/non-menu-bar anchors.
+
+macOS controls menu-bar availability across displays. Enable **System Settings → Desktop & Dock → Mission Control → Displays have separate Spaces**, then log out and back in, to use separate menu bars. Menu-bar space can also limit status-icon visibility.
+
+GitHub credentials remain session-only. Updates restart the app signed out, while cached projects and snippets remain available. Cached projects are labeled accordingly. The main menu and icon-import form use the same authenticated-session state. The import form offers device sign-in without clearing its title or source path; once connected, click Add file. Expired sessions clear the account status without deleting cached definitions.

@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 final class MockProtocol: URLProtocol {
     static var handler: ((URLRequest) throws -> (Int, Data))?
@@ -18,6 +19,14 @@ final class MockProtocol: URLProtocol {
     static func check(_ value: Bool, _ message: String) throws { if !value { throw SemanticError("FAIL: " + message) } }
     static func data(_ value: Any) throws -> Data { try JSONSerialization.data(withJSONObject: value) }
     static func main() async throws {
+        let menuSize = CGSize(width: 420, height: 630)
+        for visible in [CGRect(x: 0, y: 90, width: 1920, height: 960), CGRect(x: -1512, y: 55, width: 1512, height: 950), CGRect(x: 0, y: 1080, width: 1920, height: 1050)] {
+            let anchor = CGRect(x: visible.maxX - 80, y: visible.maxY, width: 22, height: 30)
+            let frame = StatusMenuPlacement.frame(anchor: anchor, visible: visible, size: menuSize)!
+            try check(visible.contains(frame) && frame.maxY < anchor.minY, "Keep status menu below its anchor on left/stacked displays")
+        }
+        try check(!StatusMenuPlacement.validAnchor(.zero, screen: CGRect(x: 0, y: 0, width: 1920, height: 1080), barHeight: 30), "Reject uninitialized status button geometry")
+        try check(!StatusMenuPlacement.validAnchor(CGRect(x: 0, y: 0, width: 22, height: 30), screen: CGRect(x: 0, y: 0, width: 1920, height: 1080), barHeight: 30), "Never anchor the menu at bottom left")
         let tokens = TokenParser.parse("""
         /* --fake: red; .fake {} */
         :root { --border-default: #e2e8f0; --radius-md: 8px; --spacing-sm: 4px; }
@@ -194,7 +203,7 @@ final class MockProtocol: URLProtocol {
         try check(restored.pickerTabs == withTab.pickerTabs, "Persist file-backed picker tabs")
         MockProtocol.handler = { _ in (401, Data()) }
         do { let _: GitHubUser = try await client.request("/user"); throw SemanticError("FAIL: expired credentials accepted") }
-        catch { try check(error.localizedDescription.contains("expired"), "Actionable expired-session error") }
+        catch { try check(error is GitHubAuthenticationError && error.localizedDescription.contains("expired"), "Typed expired-session error enables clearing stale connection status") }
         MockProtocol.handler = { request in
             try check(request.url!.host == "github.com" && request.httpMethod == "POST", "Device flow request targets GitHub")
             try check(request.value(forHTTPHeaderField: "Authorization") == nil, "Do not send account token in device-code request")

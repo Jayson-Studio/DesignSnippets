@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import Carbon
 import SwiftUI
+import Combine
 
 enum PickerTrigger {
     static let standard = "--"
@@ -36,19 +37,19 @@ private struct TriggerSettings: View {
     @ObservedObject var state: PickerState
     @State private var draft = ""
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) {
-                Text("Typed trigger")
+        ProtegiaListItem(title: "Typed trigger", detail: "Type this sequence in an editor to open snippets.") {
+            HStack(spacing: 8) {
                 TextField("--", text: $draft)
-                    .textFieldStyle(.roundedBorder).frame(width: 70)
+                    .textFieldStyle(ProtegiaInputStyle()).frame(width: 78)
                     .accessibilityLabel("Typed trigger to open Design Snippets")
                     .onSubmit { state.setTypedTrigger(draft) }
                 Button("Save") { state.setTypedTrigger(draft) }
+                    .buttonStyle(ProtegiaButtonStyle())
                     .disabled(!PickerTrigger.isValid(draft) || draft == state.typedTrigger)
                 Button("Reset") { draft = PickerTrigger.standard; state.setTypedTrigger(draft) }
-                    .buttonStyle(.plain).foregroundStyle(Protegia.secondary)
+                    .buttonStyle(ProtegiaButtonStyle(variant: .outline))
             }
-            Text("Type this sequence in an editor to open snippets. Use 1–4 visible ASCII characters, without spaces.")
+            Text("Use 1–4 letters, numbers, or symbols without spaces.")
                 .font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
             if !PickerTrigger.isValid(draft) {
                 Text("Enter 1–4 letters, numbers, or symbols without spaces.")
@@ -102,6 +103,30 @@ enum PickerSettingsSection: Hashable {
 }
 
 @MainActor final class PickerState: ObservableObject {
+    @Published private(set) var githubConnected = false
+    @Published private(set) var githubBusy = false
+    @Published private(set) var githubCode: String?
+    @Published private(set) var githubError: String?
+    var connectGitHub: (() -> Void)?
+    private var githubObservation: AnyCancellable?
+    func bindGitHub(_ model: AppModel) {
+        func refresh(_ state: PickerState, _ model: AppModel) {
+            let wasConnected = state.githubConnected
+            state.githubConnected = model.isGitHubConnected
+            state.githubBusy = model.busy
+            state.githubCode = model.deviceCode?.user_code
+            state.githubError = model.error
+            if model.isGitHubConnected && !wasConnected { state.tabError = nil }
+        }
+        refresh(self, model)
+        connectGitHub = { [weak model] in model?.connectGitHub() }
+        githubObservation = model.objectWillChange.sink { [weak self, weak model] in
+            Task { @MainActor in
+                guard let self, let model else { return }
+                refresh(self, model)
+            }
+        }
+    }
     static let maxTabTitleLength = 25
     @Published var query = ""
     @Published private(set) var activeSection = "Foundations"
@@ -537,56 +562,51 @@ struct PickerView: View {
             }.buttonStyle(.plain).foregroundStyle(Protegia.secondary)
                 .accessibilityLabel("Back to definitions")
             if state.settingsSection == .general {
-                TriggerSettings(state: state)
-                HStack(spacing: 10) {
-                    Text("Preferred editor")
-                    Menu {
-                        ForEach(PreferredEditor.allCases, id: \.self) { editor in
-                            Button(editor.rawValue) { state.setPreferredEditor(editor.rawValue) }
+                ProtegiaList {
+                    TriggerSettings(state: state)
+                    ProtegiaDivider()
+                    ProtegiaListItem(title: "Preferred editor") {
+                        Menu {
+                            ForEach(PreferredEditor.allCases, id: \.self) { editor in
+                                Button(editor.rawValue) { state.setPreferredEditor(editor.rawValue) }
+                            }
+                        } label: { ProtegiaSelectLabel(title: state.preferredEditor) }
+                            .menuStyle(.borderlessButton).menuIndicator(.hidden).tint(Protegia.text)
+                        if state.preferredEditor == PreferredEditor.codex.rawValue || state.preferredEditor == PreferredEditor.claude.rawValue {
+                            Text("Opens a code session with the file and line prefilled.")
+                                .font(Protegia.font(11)).foregroundStyle(Protegia.secondary)
                         }
-                    } label: { settingsChoice(state.preferredEditor) }
-                }
-                HStack(spacing: 10) {
-                    Text("Project folder")
-                    Button { state.chooseCheckout?() } label: {
-                        settingsChoice(state.checkoutPath.isEmpty ? "Choose folder" : URL(fileURLWithPath: state.checkoutPath).lastPathComponent)
                     }
-                    .buttonStyle(.plain)
-                    .help(state.checkoutPath.isEmpty ? "Choose the local folder for this GitHub project" : state.checkoutPath)
-                }
-                if let checkoutError = state.checkoutError {
-                    Text(checkoutError).font(Protegia.font(10)).foregroundStyle(Protegia.destructive)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Text("The local copy of this GitHub project. The file icon uses it to find a token’s source file and definition line.")
-                    .font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if state.preferredEditor == PreferredEditor.codex.rawValue || state.preferredEditor == PreferredEditor.claude.rawValue {
-                    Text("Codex and Claude open a code session with the file and line prefilled. VS Code and Cursor jump to the line.")
-                        .font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
+                    ProtegiaDivider()
+                    ProtegiaListItem(title: "Project folder", detail: "Choose the local project folder to open token definitions in your editor.") {
+                        Text(state.checkoutPath.isEmpty ? "No folder selected" : state.checkoutPath)
+                            .font(Protegia.font(11)).foregroundStyle(Protegia.secondary).lineLimit(2)
+                        Button(state.checkoutPath.isEmpty ? "Choose folder…" : "Change folder…") { state.chooseCheckout?() }
+                            .buttonStyle(ProtegiaButtonStyle(variant: .outline))
+                        if let error = state.checkoutError {
+                            Text(error).font(Protegia.font(11)).foregroundStyle(Protegia.destructive)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                 }
             } else {
-                HStack(spacing: 10) {
-                    Text("Sort By")
-                    Menu {
-                        ForEach(PickerSortOrder.allCases, id: \.self) { order in
-                            Button(order.rawValue) {
-                                if case .tokens(let title) = state.settingsSection { state.setSortOrder(order, for: title) }
+                ProtegiaList {
+                    ProtegiaListItem(title: "Sort by") {
+                        Menu {
+                            ForEach(PickerSortOrder.allCases, id: \.self) { order in
+                                Button(order.rawValue) {
+                                    if case .tokens(let title) = state.settingsSection { state.setSortOrder(order, for: title) }
+                                }
                             }
-                        }
-                    } label: {
-                        if case .tokens(let title) = state.settingsSection { settingsChoice(state.sortOrder(for: title).rawValue) }
+                        } label: {
+                            if case .tokens(let title) = state.settingsSection { ProtegiaSelectLabel(title: state.sortOrder(for: title).rawValue) }
+                        }.menuStyle(.borderlessButton).menuIndicator(.hidden).tint(Protegia.text)
                     }
                 }
             }
         }
-        .font(Protegia.font(12)).padding(.horizontal, 24).padding(.top, 18)
+        .font(Protegia.font(12)).padding(.horizontal, 16).padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func settingsChoice(_ title: String) -> some View {
-        Text(title).font(Protegia.font(12)).padding(.horizontal, 10).padding(.vertical, 8)
-            .background(Protegia.level2, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
     }
 
     private var tabTitleForm: some View {
@@ -597,8 +617,7 @@ struct PickerView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Title").font(Protegia.font(11, bold: true)).foregroundStyle(Protegia.secondary)
                 TextField("Icons", text: $state.tabTitle)
-                    .textFieldStyle(.plain).font(Protegia.font(12))
-                    .padding(11).background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
+                    .textFieldStyle(ProtegiaInputStyle())
                     .focused($tabTitleFocused).onSubmit { state.advanceTabCreation() }
                     .onKeyPress(.escape) { state.cancelTab(); return .handled }
                     .accessibilityLabel("Tab title")
@@ -612,23 +631,41 @@ struct PickerView: View {
                     .foregroundStyle(Protegia.secondary)
                 Spacer()
                 Button("Next") { state.advanceTabCreation() }
-                    .buttonStyle(.plain).foregroundStyle(Protegia.accent)
+                    .buttonStyle(ProtegiaButtonStyle())
                     .disabled(state.tabTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }.font(Protegia.font(11, bold: true))
-        }.padding(22).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        }.frame(width: PickerLayout.width - 44, alignment: .leading).padding(22)
     }
 
     private var tabSourceForm: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Choose a token file").font(Protegia.font(16, bold: true))
-            Text("Enter a repository path or GitHub file link from your active project for \(state.displayTitle(for: "New tab")).")
+            Text("Enter a repository path or GitHub file link from your active project.")
                 .font(Protegia.font(11)).foregroundStyle(Protegia.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !state.githubConnected {
+                ProtegiaListItem(title: "GitHub session", detail: "Cached snippets work offline. Sign in to add or refresh files.") {
+                    if let code = state.githubCode {
+                        Text(code).font(.system(size: 16, weight: .bold, design: .monospaced)).textSelection(.enabled)
+                        HStack {
+                            Button("Copy code") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(code, forType: .string) }
+                                .buttonStyle(ProtegiaButtonStyle(variant: .outline))
+                            Link("Open GitHub", destination: URL(string: "https://github.com/login/device")!)
+                        }
+                    } else {
+                        Button(state.githubBusy ? "Connecting…" : "Connect GitHub") { state.connectGitHub?() }
+                            .buttonStyle(ProtegiaButtonStyle()).disabled(state.githubBusy)
+                    }
+                    if let error = state.githubError {
+                        Text(error).font(Protegia.font(11)).foregroundStyle(Protegia.destructive)
+                    }
+                }
+            }
             VStack(alignment: .leading, spacing: 6) {
                 Text("Source file").font(Protegia.font(11, bold: true)).foregroundStyle(Protegia.secondary)
                 TextField("Repository path or GitHub file link", text: $state.tabFilePath)
-                    .textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
-                    .padding(11).background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
-                    .focused($tabPathFocused).onSubmit { state.submitTab() }
+                    .textFieldStyle(ProtegiaInputStyle())
+                    .focused($tabPathFocused).onSubmit { if state.githubConnected && !state.githubBusy { state.submitTab() } }
                     .onKeyPress(.escape) { state.cancelTab(); return .handled }
                     .accessibilityLabel("Tab token file path")
             }
@@ -641,10 +678,10 @@ struct PickerView: View {
                     .foregroundStyle(Protegia.secondary).disabled(state.tabBusy)
                 Spacer()
                 Button(state.tabBusy ? "Loading…" : "Add file") { state.submitTab() }
-                    .buttonStyle(.plain).foregroundStyle(Protegia.accent)
-                    .disabled(state.tabBusy || state.tabFilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .buttonStyle(ProtegiaButtonStyle())
+                    .disabled(!state.githubConnected || state.githubBusy || state.tabBusy || state.tabFilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }.font(Protegia.font(11, bold: true))
-        }.padding(22).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        }.frame(width: PickerLayout.width - 44, alignment: .leading).padding(22)
     }
 
     private func entry(_ token: DesignToken, index: Int, grid: Bool) -> some View {
@@ -897,6 +934,7 @@ struct PickerDismissalGate {
     private let eventMarker: Int64 = 0x53454D41
     init(model: AppModel) {
         self.model = model
+        state.bindGitHub(model)
         state.choose = { [weak self] in self?.insert($0) }
         state.openDefinition = { [weak self] token in
             guard let self else { return }

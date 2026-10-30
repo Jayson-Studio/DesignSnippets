@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 struct DesignToken: Codable, Identifiable, Equatable {
     var id: String { "\(source):\(name)" }
@@ -233,5 +234,21 @@ enum IconCatalog {
         return TokenParser.unique(groups.flatMap { names, label in
             names.map { DesignToken(name: $0, value: label, kind: "Icon", source: source) }
         })
+    }
+}
+
+// Global AppKit coordinates may be negative or vertically offset on secondary displays.
+enum StatusMenuPlacement {
+    static func validAnchor(_ anchor: CGRect, screen: CGRect, barHeight: CGFloat) -> Bool {
+        anchor.width > 0 && anchor.height > 0
+            && screen.contains(CGPoint(x: anchor.midX, y: anchor.midY))
+            && anchor.minY >= screen.maxY - barHeight - 8
+    }
+    static func frame(anchor: CGRect, visible: CGRect, size: CGSize) -> CGRect? {
+        guard anchor.width > 0, anchor.height > 0, visible.width >= size.width + 16,
+              visible.height >= size.height + 16, size.width > 0, size.height > 0 else { return nil }
+        let x = min(max(anchor.midX - size.width / 2, visible.minX + 8), visible.maxX - size.width - 8)
+        let y = min(max(anchor.minY - size.height - 2, visible.minY + 8), visible.maxY - size.height - 8)
+        return CGRect(origin: CGPoint(x: x, y: y), size: size)
     }
 }

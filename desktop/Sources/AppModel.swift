@@ -113,12 +113,20 @@ enum LocalDefinition {
     var stopMonitor: (() -> Void)?
     private var task: Task<Void, Never>?
     private var refreshAfterGitHub = false
-    private var token: String?
+    @Published private var token: String?
     private var displayedTokensByRepository: [Int: [DesignToken]] = [:]
     var chooseLocalCheckoutOverride: ((String?) -> String?)?
     var openEditorOverride: ((PreferredEditor, URL, Int, String) throws -> Void)?
     private let defaults: UserDefaults
     private let cacheURL: URL
+    var isGitHubConnected: Bool { token != nil && account != nil }
+    func invalidateGitHubSession() {
+        token = nil; account = nil; repositories = []; deviceCode = nil
+    }
+    private func recordGitHubError(_ error: Error) {
+        if error is GitHubAuthenticationError { invalidateGitHubSession() }
+        self.error = error.localizedDescription
+    }
     var activeIndex: TokenIndex? { indices.first { $0.repository.id == activeID } }
     var tokens: [DesignToken] {
         guard let index = activeIndex else { return [] }
@@ -292,6 +300,7 @@ enum LocalDefinition {
                     do { try await refreshCachedColors(using: GitHubClient(token: accessToken)) }
                     catch is CancellationError { throw CancellationError() }
                     catch {
+                        if error is GitHubAuthenticationError { invalidateGitHubSession() }
                         self.error = "Could not refresh cached color previews. \(error.localizedDescription)"
                         status = "Cached definitions are unchanged."
                         screen = "home"
@@ -301,7 +310,7 @@ enum LocalDefinition {
                 status = account == nil ? "" : "Color refresh canceled. Cached definitions are unchanged."
                 if account != nil { screen = "home" }
             }
-            catch { self.error = error.localizedDescription }
+            catch { recordGitHubError(error) }
             busy = false; deviceCode = nil
         }
     }
@@ -334,7 +343,7 @@ enum LocalDefinition {
         task = Task {
             do { try await loadRepositories() }
             catch is CancellationError { }
-            catch { self.error = error.localizedDescription }
+            catch { recordGitHubError(error) }
             busy = false
         }
     }
@@ -347,7 +356,7 @@ enum LocalDefinition {
     func importSelectedFiles() {
         guard let repo = selectedRepository else { return }
         do { sync(repo, paths: try GitHubClient.filePaths(tokenFilePaths.components(separatedBy: .newlines), repository: repo)) }
-        catch { self.error = error.localizedDescription }
+        catch { recordGitHubError(error) }
     }
     func addPickerTab(title rawTitle: String, path rawPath: String, completion: @escaping (Result<PickerTab, Error>) -> Void) {
         guard let index = activeIndex else { completion(.failure(SemanticError("Choose a project before adding a tab."))); return }
@@ -391,7 +400,7 @@ enum LocalDefinition {
     func sync(_ repo: Repository, paths: [String], pickerTabs: [PickerTab]? = nil,
               completion: ((Result<TokenIndex, Error>) -> Void)? = nil) {
         guard token != nil else {
-            let problem = SemanticError("Connect GitHub before syncing this repository.")
+            let problem = SemanticError("Your GitHub session is signed out. Reconnect below to import; cached snippets remain available.")
             if let completion { completion(.failure(problem)) } else { error = problem.localizedDescription; screen = "home" }
             return
         }
@@ -414,6 +423,7 @@ enum LocalDefinition {
                 status = "Sync canceled. Previous tokens are unchanged."
                 completion?(.failure(CancellationError()))
             } catch {
+                if error is GitHubAuthenticationError { invalidateGitHubSession() }
                 if let completion { completion(.failure(error)) } else { self.error = error.localizedDescription }
             }
             busy = false
@@ -444,7 +454,7 @@ enum LocalDefinition {
         """, source: "example/tokens.css")
         let index = TokenIndex(repository: repository, tokens: tokens, syncedAt: Date(), revision: "sample")
         indices = indices.filter { $0.repository.id != 0 } + [index]; select(0); screen = "home"
-        do { try persist(indices) } catch { self.error = error.localizedDescription }
+        do { try persist(indices) } catch { recordGitHubError(error) }
     }
     private func persist(_ values: [TokenIndex]) throws {
         try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])

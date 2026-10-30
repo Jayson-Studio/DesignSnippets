@@ -123,7 +123,8 @@ import CoreText
             picker.createTab()
             picker.tabTitle = "New components"
         }
-        try render(PickerView(state: picker), name: "token-picker-new-tab-source") { picker.advanceTabCreation() }
+        picker.advanceTabCreation()
+        try render(PickerView(state: picker), name: "token-picker-new-tab-source")
         picker.selectSection("Foundations")
         if let flag = CommandLine.arguments.firstIndex(of: "--token-fixture"), CommandLine.arguments.indices.contains(flag + 1) {
             let indices = try JSONDecoder().decode([TokenIndex].self, from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[flag + 1])))

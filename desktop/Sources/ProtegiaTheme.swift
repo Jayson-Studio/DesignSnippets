@@ -54,11 +54,51 @@ struct ProtegiaInputStyle: TextFieldStyle {
         configuration.textFieldStyle(.plain)
             .font(Protegia.font(14)).foregroundStyle(Protegia.text)
             .padding(.horizontal, Protegia.spaceSM).frame(height: 36)
-            .background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
-            .overlay(RoundedRectangle(cornerRadius: Protegia.controlRadius).stroke(focused ? Protegia.secondary : Protegia.border, lineWidth: 1))
+            .background(Protegia.base, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
+            .overlay(RoundedRectangle(cornerRadius: Protegia.controlRadius).stroke(focused ? Protegia.secondary : Protegia.level2, lineWidth: 1))
             .focused($focused)
     }
 }
 struct ProtegiaDivider: View {
     var body: some View { Rectangle().fill(Protegia.border).frame(height: 1) }
+}
+
+/// Native grouped-list composition using Protegia's surface, divider and spacing tokens.
+struct ProtegiaList<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0, content: content)
+            .background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.cardRadius))
+            .clipShape(RoundedRectangle(cornerRadius: Protegia.cardRadius))
+            .overlay(RoundedRectangle(cornerRadius: Protegia.cardRadius).stroke(Protegia.level2, lineWidth: 1))
+    }
+}
+struct ProtegiaListItem<Content: View>: View {
+    let title: String
+    var detail: String? = nil
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: Protegia.spaceXS) {
+            Text(title).font(Protegia.font(12, bold: true)).foregroundStyle(Protegia.text)
+            if let detail {
+                Text(detail).font(Protegia.font(11)).foregroundStyle(Protegia.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            content()
+        }.padding(Protegia.spaceSM).frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+/// Mirrors the Input/SelectTrigger control height, inset, radius and border contract.
+struct ProtegiaSelectLabel: View {
+    let title: String
+    var body: some View {
+        HStack(spacing: Protegia.spaceXS) {
+            Text(title).lineLimit(1)
+            Spacer(minLength: Protegia.spaceXS)
+            Image(systemName: "chevron.down").font(.system(size: 10, weight: .medium))
+        }.font(Protegia.font(12)).foregroundStyle(Protegia.text)
+            .padding(.horizontal, Protegia.spaceSM).frame(height: 36)
+            .background(Protegia.base, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
+            .overlay(RoundedRectangle(cornerRadius: Protegia.controlRadius).stroke(Protegia.level2, lineWidth: 1))
+    }
 }

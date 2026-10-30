@@ -16,7 +16,6 @@ import Sparkle
             .sink { [weak model] available in model?.canCheckForUpdates = available }
         model.checkForUpdates = { [weak controller] in
             beforeCheck()
-            NSApp.activate(ignoringOtherApps: true)
             controller?.checkForUpdates(nil)
         }
         // Sparkle owns consent, scheduling, signature validation, installation, and relaunch.

@@ -26,6 +26,7 @@ struct PreviewSandbox: View {
         .padding(8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
+            picker.bindGitHub(model)
             picker.updateIndex(model.activeIndex)
             picker.choose = { [weak picker] token in
                 guard let picker, let index = picker.matches.firstIndex(of: token) else { return }

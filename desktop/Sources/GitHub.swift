@@ -13,6 +13,9 @@ struct AccessGrant: Decodable {
     let error: String?
     let error_description: String?
 }
+struct GitHubAuthenticationError: LocalizedError {
+    var errorDescription: String? { "Your GitHub session expired. Reconnect GitHub to continue; cached snippets remain available." }
+}
 struct GitHubUser: Decodable { let login: String }
 struct GitHubClient {
     var token: String? = nil
@@ -28,7 +31,7 @@ struct GitHubClient {
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else { throw SemanticError("GitHub returned an invalid response.") }
         if response.statusCode == 404 { throw SemanticError("GitHub could not find that file, branch, or repository. Check the path and repository access.") }
-        if response.statusCode == 401 { throw SemanticError("Your GitHub session expired. Disconnect and sign in again.") }
+        if response.statusCode == 401 { throw GitHubAuthenticationError() }
         if response.statusCode == 403 || response.statusCode == 429 { throw SemanticError("GitHub denied this request or the API limit was reached. Check repository access and try again later.") }
         guard (200..<300).contains(response.statusCode) else { throw SemanticError("GitHub request failed (\(response.statusCode)). Check that DesignSnippets is installed on this repository with Contents: read access.") }
         return try JSONDecoder().decode(type, from: data)

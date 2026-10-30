@@ -13,3 +13,9 @@ Source: https://design.protegia.io and the local Protegia repository, `src/style
 - Native adaptation: input focus uses the secondary text color for a visible outline; system keyboard focus and checkbox behavior are preserved. The app explicitly uses the dark Protegia theme.
 
 The Semantic name and # mark remain the app identity. The earlier browser prototype is unchanged.
+
+## Settings components
+
+Protegia is the required default for native UI changes (see the root AGENTS.md). `ProtegiaInputStyle`, `ProtegiaSelectLabel`, and `ProtegiaButtonStyle` mirror the local Protegia `ui/input.tsx`, `ui/select.tsx`, and `ui/button.tsx` contracts: 36 pt controls, 12 pt horizontal insets, 8 pt corners, visible focus and disabled states. Inputs use the base surface within grouped lists so their boundaries remain visible.
+
+`ProtegiaList` and `ProtegiaListItem` compose the existing surface, divider, typography, and spacing tokens for settings and account rows. The available Protegia checkout has no standalone list primitive; these are shared native compositions, not imported React list components. Native switches and checkboxes retain system keyboard/accessibility behavior inside those rows. Settings and tab creation reuse these components instead of platform-default text-field styling.

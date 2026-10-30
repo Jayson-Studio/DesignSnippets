@@ -90,7 +90,7 @@ struct SemanticPanel: View {
         VStack(alignment: .leading, spacing: Protegia.spaceBase) {
             if let index = model.activeIndex {
                 VStack(alignment: .leading, spacing: 9) {
-                    Text("ACTIVE PROJECT").font(Protegia.font(10, bold: true)).tracking(1.1).foregroundStyle(Protegia.secondary)
+                    Text(model.isGitHubConnected ? "ACTIVE PROJECT" : "CACHED PROJECT · GITHUB SIGNED OUT").font(Protegia.font(10, bold: true)).tracking(1.1).foregroundStyle(Protegia.secondary)
                     HStack {
                         Image(systemName: "folder").foregroundStyle(semanticGreen)
                         Menu { ForEach(model.indices, id: \.repository.id) { saved in Button(saved.repository.full_name) { model.select(saved.repository.id) } } } label: { Text(index.repository.full_name).font(Protegia.font(14, bold: true)) }.menuStyle(.borderlessButton)
@@ -101,8 +101,8 @@ struct SemanticPanel: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Color previews need an updated token cache.")
                             .font(Protegia.font(11, bold: true))
-                        Button(model.account == nil ? "Connect GitHub to update colors" : "Refresh color previews") {
-                            if model.account == nil { model.connectGitHub() }
+                        Button(!model.isGitHubConnected ? "Connect GitHub to update colors" : "Refresh color previews") {
+                            if !model.isGitHubConnected { model.connectGitHub() }
                             else { model.refreshTokens(index.repository) }
                         }
                         .buttonStyle(.plain).font(Protegia.font(11)).foregroundStyle(semanticGreen).disabled(model.busy)
@@ -134,9 +134,9 @@ struct SemanticPanel: View {
                 Text("Connect GitHub, choose a project, and bring its semantic names into the apps you already use.").font(Protegia.font(14)).foregroundStyle(Protegia.secondary).lineSpacing(4)
                 VStack(alignment: .leading, spacing: Protegia.spaceBase) { onboardingRow("1", "Connect your GitHub account"); onboardingRow("2", "Choose a design-system project"); onboardingRow("--", "Reference tokens wherever you type") }.padding(.vertical, 9)
             }
-            if model.account == nil {
+            if !model.isGitHubConnected {
                 Button { model.connectGitHub() } label: { Label("Connect GitHub", systemImage: "link").frame(maxWidth: .infinity).padding(.vertical, 5) }.buttonStyle(ProtegiaButtonStyle()).tint(semanticGreen).disabled(model.busy)
-                Text("Sign in each time you open DesignSnippets. Your GitHub session is kept only until you quit.").font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
+                Text("GitHub sign-in ends when the app restarts, including after updates. Reconnect to import or refresh; cached snippets still work.").font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
                 if model.activeIndex == nil { Button("Explore with sample tokens") { model.sample() }.buttonStyle(.plain).font(Protegia.font(12)).foregroundStyle(Protegia.secondary).frame(maxWidth: .infinity) }
             } else {
                 Button { model.screen = "projects" } label: { Label("Choose another project", systemImage: "plus").frame(maxWidth: .infinity) }.buttonStyle(ProtegiaButtonStyle(variant: .outline)).disabled(model.busy)
@@ -213,48 +213,57 @@ struct SemanticPanel: View {
     }
     private var preferences: some View {
         VStack(alignment: .leading, spacing: Protegia.spaceBase) {
-            Text("Make it part of your flow.").font(Protegia.font(24, bold: true))
-            Text("Project folder").font(Protegia.font(12, bold: true))
-            Text(model.activeIndex?.repository.full_name ?? "Choose an active GitHub project first")
-                .font(Protegia.font(11)).foregroundStyle(Protegia.secondary)
-            HStack(spacing: 10) {
-                Text(model.checkoutPath.isEmpty ? "No folder selected" : model.checkoutPath)
-                    .font(Protegia.font(11)).foregroundStyle(Protegia.secondary).lineLimit(1)
-                    .help(model.checkoutPath)
-                Spacer()
-                Button(model.checkoutPath.isEmpty ? "Choose folder…" : "Change folder…") {
-                    if let path = model.chooseLocalCheckout() { model.configureLocalCheckout(path) }
+            Text("Preferences").font(Protegia.font(24, bold: true))
+            ProtegiaList {
+                ProtegiaListItem(title: "Project folder", detail: model.activeIndex?.repository.full_name ?? "Choose a project first") {
+                    Text(model.checkoutPath.isEmpty ? "No folder selected" : model.checkoutPath)
+                        .font(Protegia.font(11)).foregroundStyle(Protegia.secondary).lineLimit(2)
+                    Button(model.checkoutPath.isEmpty ? "Choose folder…" : "Change folder…") {
+                        if let path = model.chooseLocalCheckout() { model.configureLocalCheckout(path) }
+                    }.buttonStyle(ProtegiaButtonStyle(variant: .outline))
+                        .disabled(model.activeIndex?.repository.id == nil || model.activeIndex?.repository.id == 0)
+                    if let error = model.folderError { Text(error).font(Protegia.font(11)).foregroundStyle(Protegia.destructive) }
                 }
-                .disabled(model.activeIndex?.repository.id == nil || model.activeIndex?.repository.id == 0)
+                ProtegiaDivider()
+                ProtegiaListItem(title: "Compatible apps", detail: "Choose where the picker appears. Password fields are excluded.") {
+                    Toggle("Use in all compatible apps", isOn: $model.allApps).toggleStyle(.switch).font(Protegia.font(12))
+                    if !model.allApps {
+                        ForEach(model.supportedApps, id: \.id) { app in
+                            Toggle(app.name, isOn: Binding(get: { model.enabledApps.contains(app.id) }, set: { enabled in
+                                if enabled { model.enabledApps.insert(app.id) } else { model.enabledApps.remove(app.id) }
+                            })).toggleStyle(.checkbox).font(Protegia.font(12))
+                        }
+                        if model.enabledApps.isEmpty { Text("Select an app or enable all compatible apps.").font(Protegia.font(11)).foregroundStyle(Protegia.secondary) }
+                    }
+                }
+                ProtegiaDivider()
+                ProtegiaListItem(title: "Accessibility", detail: model.permissionGranted ? "Access granted" : "Access needed to insert snippets") {
+                    if let notice = model.pickerNotice { Text(notice).font(Protegia.font(11)).foregroundStyle(Protegia.secondary) }
+                    if model.pickerRequested {
+                        Button("Pause picker") { model.pausePicker() }.buttonStyle(ProtegiaButtonStyle(variant: .outline))
+                    }
+                    if !model.pickerEnabled {
+                        Button(model.permissionGranted ? "Start picker" : "Allow Accessibility") { model.enablePicker() }.buttonStyle(ProtegiaButtonStyle())
+                    }
+                    Text("⌃⌥Space also opens the picker. Escape dismisses it.").font(Protegia.font(11)).foregroundStyle(Protegia.secondary)
+                }
+                ProtegiaDivider()
+                ProtegiaListItem(title: "GitHub", detail: model.isGitHubConnected ? "Connected as @\(model.account ?? "")" : "Signed out · cached snippets remain available") {
+                    if model.isGitHubConnected {
+                        Button("Disconnect & clear cached tokens", role: .destructive) { model.disconnect() }
+                            .buttonStyle(ProtegiaButtonStyle(variant: .outline))
+                    } else {
+                        Button("Connect GitHub") { model.connectGitHub() }.buttonStyle(ProtegiaButtonStyle()).disabled(model.busy)
+                    }
+                    if model.allowsDeveloperSetup { Button("GitHub App configuration…") { model.screen = "setup" }.buttonStyle(.plain) }
+                }
+                ProtegiaDivider()
+                ProtegiaListItem(title: "Updates", detail: "Version \(appVersion)") {
+                    Button("Check for Updates…") { model.checkForUpdates?() }
+                        .buttonStyle(ProtegiaButtonStyle(variant: .outline)).disabled(!model.canCheckForUpdates)
+                    if !model.updatesConfigured { Text("Updates are unavailable in this development build.").font(Protegia.font(11)).foregroundStyle(Protegia.secondary) }
+                }
             }
-            if let folderError = model.folderError {
-                Text(folderError).font(Protegia.font(11)).foregroundStyle(Protegia.destructive)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Text("Select the local copy of this project to enable the file icon in token results.")
-                .font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
-            ProtegiaDivider()
-            Toggle("Use in all compatible apps", isOn: $model.allApps).toggleStyle(.switch).font(Protegia.font(12))
-            if !model.allApps {
-            Text("USE ONLY IN THESE APPS").font(Protegia.font(10, bold: true)).tracking(1).foregroundStyle(Protegia.secondary)
-            ForEach(model.supportedApps, id: \.id) { app in Toggle(app.name, isOn: Binding(get: { model.enabledApps.contains(app.id) }, set: { enabled in if enabled { model.enabledApps.insert(app.id) } else { model.enabledApps.remove(app.id) } })).toggleStyle(.checkbox).font(Protegia.font(12)) }
-            }
-            ProtegiaDivider()
-            Text("The picker works across compatible apps by default. Turn off the switch to limit it to selected apps. Query text stays in memory and is never stored or sent to GitHub. Password fields are excluded. Some custom editors may not expose a compatible text field.").font(Protegia.font(12)).foregroundStyle(Protegia.secondary).lineSpacing(3)
-            Text(model.permissionGranted ? "Accessibility access granted" : "Accessibility access needed").font(Protegia.font(12, bold: true))
-            if let notice = model.pickerNotice { Text(notice).font(Protegia.font(12)).foregroundStyle(Protegia.secondary) }
-            if !model.allApps && model.enabledApps.isEmpty { Text("Select an app below the switch, or use all compatible apps.").font(Protegia.font(12)).foregroundStyle(Protegia.secondary) }
-            if model.pickerRequested { Button("Pause token picker") { model.pausePicker() } }
-            if !model.pickerEnabled { Button(model.permissionGranted ? "Start token picker" : "Allow Accessibility") { model.enablePicker() }.buttonStyle(ProtegiaButtonStyle()).tint(semanticGreen) }
-            Text("Your picker setting is remembered when DesignSnippets restarts.").font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
-            Text("⌃⌥Space also opens the picker in a supported text field. Escape dismisses it without changing your text.").font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
-            ProtegiaDivider()
-            Text("Updates").font(Protegia.font(12, bold: true))
-            Text("Version \(appVersion)").font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
-            Button("Check for Updates…") { model.checkForUpdates?() }.disabled(!model.canCheckForUpdates)
-            if !model.updatesConfigured { Text("In-app updates are not available in this development build.").font(Protegia.font(10)).foregroundStyle(Protegia.secondary) }
-            if model.allowsDeveloperSetup { Button("GitHub App configuration…") { model.screen = "setup" }.buttonStyle(.plain).foregroundStyle(Protegia.secondary) }
-            if model.account != nil { Button("Disconnect GitHub & clear cached tokens", role: .destructive) { model.disconnect() }.font(Protegia.font(10)) }
         }
     }
 }

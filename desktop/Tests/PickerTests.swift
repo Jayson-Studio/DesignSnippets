@@ -42,6 +42,21 @@ final class ColorCacheProtocol: URLProtocol {
         let cachedColor = DesignToken(name: "--color-danger", value: "var(--red-10)", kind: "Color", source: "theme.css")
         var oldIndex = TokenIndex(repository: cachedRepo, tokens: [cachedColor], syncedAt: Date(), revision: "old")
         cachedModel.indices = [oldIndex]; cachedModel.activeID = cachedRepo.id
+        cachedModel.account = "stale-account"
+        precondition(!cachedModel.isGitHubConnected) // Account labels or cached projects are not credentials.
+        let connectionState = PickerState()
+        connectionState.bindGitHub(cachedModel)
+        connectionState.createTab(); connectionState.tabTitle = "Icons"
+        connectionState.advanceTabCreation(); connectionState.tabFilePath = "src/icons.tsx"
+        connectionState.tabError = "Keep this import failure visible"
+        cachedModel.invalidateGitHubSession()
+        cachedModel.busy = true
+        for _ in 0..<5 { await Task.yield() }
+        precondition(!connectionState.githubConnected && connectionState.githubBusy)
+        precondition(connectionState.tabTitle == "Icons" && connectionState.tabFilePath == "src/icons.tsx")
+        precondition(connectionState.tabError == "Keep this import failure visible")
+        precondition(cachedModel.account == nil && cachedModel.indices.count == 1 && cachedModel.activeIndex?.revision == "old")
+        cachedModel.busy = false
         precondition(cachedModel.needsColorRefresh)
         oldIndex.colorReferencesScanned = true
         cachedModel.indices = [oldIndex]

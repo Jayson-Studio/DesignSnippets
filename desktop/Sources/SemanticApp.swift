@@ -46,6 +46,7 @@ private struct MenuWindowContent: View {
     private var model: AppModel!
     private var picker: TokenPicker!
     private var updater: AppUpdater?
+    private var menuAnchor: CGRect?
     private var menuHeight: CGFloat = 620
     private let menuGeometry = MenuWindowGeometry()
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -66,6 +67,8 @@ private struct MenuWindowContent: View {
         }
         menuPanel = MenuPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: menuHeight + 10),
                               styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        menuPanel.isRestorable = false
+        menuPanel.isExcludedFromWindowsMenu = true
         menuPanel.isOpaque = false
         menuPanel.backgroundColor = .clear
         menuPanel.hasShadow = true
@@ -82,9 +85,12 @@ private struct MenuWindowContent: View {
         host.frame = NSRect(x: 0, y: 0, width: 420, height: menuHeight + 10)
         host.autoresizingMask = [.width, .height]
         menuPanel.contentView = host
-        updater = AppUpdater(model: model) { [weak self] in self?.closePanel() }
+        updater = AppUpdater(model: model) { [weak self] in
+            self?.picker.dismiss()
+            self?.closePanel()
+        }
         model.reconcilePicker()
-        toggle()
+        // Launch and updater relaunch remain quiet; only a status-item click opens the menu.
     }
     func applicationDidBecomeActive(_ notification: Notification) { model?.returnedToApp() }
     private func installMainMenu() {
@@ -111,8 +117,15 @@ private struct MenuWindowContent: View {
         mainMenu.addItem(editItem)
         NSApp.mainMenu = mainMenu
     }
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showPanel(); return true }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { false }
     @objc private func toggle() {
+        let pointer = NSEvent.mouseLocation
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(pointer) }),
+           pointer.y >= screen.frame.maxY - NSStatusBar.system.thickness - 8 {
+            // Status buttons can have mirrored representations on other displays.
+            // Use the actual click, not the original status-button window's screen.
+            menuAnchor = CGRect(x: pointer.x - 11, y: screen.frame.maxY - NSStatusBar.system.thickness, width: 22, height: NSStatusBar.system.thickness)
+        }
         if NSApp.currentEvent?.type == .rightMouseUp {
             let menu = NSMenu()
             menu.addItem(withTitle: "Open DesignSnippets", action: #selector(showPanel), keyEquivalent: "").target = self
@@ -143,15 +156,12 @@ private struct MenuWindowContent: View {
     }
     @discardableResult private func positionMenu() -> Bool {
         guard let button = statusItem.button, let buttonWindow = button.window else { return false }
-        let anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
-        let screen = buttonWindow.screen ?? NSScreen.screens.first(where: { $0.frame.contains(NSPoint(x: anchor.midX, y: anchor.midY)) }) ?? NSScreen.main
-        guard let screen else { return false }
-        let visible = screen.visibleFrame
-        let size = menuPanel.frame.size
-        let x = min(max(anchor.midX - size.width / 2, visible.minX + 8), visible.maxX - size.width - 8)
-        let y = min(max(anchor.minY - size.height - 2, visible.minY + 8), visible.maxY - size.height)
-        menuPanel.setFrameOrigin(NSPoint(x: x, y: y))
-        menuGeometry.arrowX = min(max(anchor.midX - x, 20), size.width - 20)
+        let anchor = menuAnchor ?? buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(NSPoint(x: anchor.midX, y: anchor.midY)) }),
+              StatusMenuPlacement.validAnchor(anchor, screen: screen.frame, barHeight: NSStatusBar.system.thickness),
+              let frame = StatusMenuPlacement.frame(anchor: anchor, visible: screen.visibleFrame, size: menuPanel.frame.size) else { return false }
+        menuPanel.setFrameOrigin(frame.origin)
+        menuGeometry.arrowX = min(max(anchor.midX - frame.minX, 20), frame.width - 20)
         return true
     }
     @objc private func checkForUpdates() { model.checkForUpdates?() }
