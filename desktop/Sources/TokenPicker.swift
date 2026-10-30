@@ -78,7 +78,7 @@ enum PickerLayout {
         case .upArrow: state.navigate(.up)
         case .downArrow: state.navigate(.down)
         case .return, .tab:
-            if state.itemsFocused, state.matches.indices.contains(state.selected) { state.choose?(state.matches[state.selected]) }
+            if let token = state.submissionToken { state.choose?(token) }
         case .escape: state.query = ""
         default: return false
         }
@@ -227,6 +227,13 @@ enum PickerSettingsSection: Hashable {
         case .twoColumns: 2
         case .adaptive: max(1, Int((gridContentWidth + 8) / (48 + 8)))
         }
+    }
+    // Tab focus controls the highlight, not whether Return can accept a result.
+    var submissionToken: DesignToken? {
+        guard !creatingTab, !showingSettings else { return nil }
+        let results = matches
+        guard !results.isEmpty else { return nil }
+        return results[itemsFocused ? min(max(selected, 0), results.count - 1) : 0]
     }
     func navigate(_ direction: PickerNavigationDirection, pointer: CGPoint? = nil) {
         selectionFromPointer = false
@@ -1363,9 +1370,8 @@ struct PickerDismissalGate {
             if code == 53 { dismiss(); return true }
             if code == 125 || code == 126 { dismiss(); return false }
             if code == 36 || code == 76 || code == 48 {
-                guard state.itemsFocused else { return true }
-                guard !state.matches.isEmpty else { dismiss(); return false }
-                insert(state.matches[min(state.selected, state.matches.count - 1)]); return true
+                guard let token = state.submissionToken else { return true }
+                insert(token); return true
             }
             if code == 51 {
                 if flags.contains(.maskAlternate) { dismiss(); return false }

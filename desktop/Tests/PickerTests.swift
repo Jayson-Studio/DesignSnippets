@@ -395,6 +395,31 @@ final class ColorCacheProtocol: URLProtocol {
         appearanceKeys.showingSettings = false
         appearanceKeys.createTab()
         precondition(!PreviewPickerKeyboard.handle("<", modifiers: [.shift], state: appearanceKeys))
+        let submission = PickerState(defaults: layoutDefaults)
+        submission.tokens = [DesignToken(name: "ArrowIcon", value: "React icon", kind: "Icon", source: "icons.tsx"),
+                             DesignToken(name: "--color-accent", value: "red", kind: "Color", source: "theme.css")]
+        var insertedNames: [String] = []
+        submission.choose = { insertedNames.append($0.name) }
+        submission.query = "Arrow"
+        precondition(!submission.itemsFocused)
+        precondition(PreviewPickerKeyboard.handle(.return, modifiers: [], state: submission))
+        precondition(insertedNames == ["ArrowIcon"])
+        submission.query = "color"
+        precondition(PreviewPickerKeyboard.handle(.return, modifiers: [], state: submission))
+        precondition(insertedNames == ["ArrowIcon", "--color-accent"])
+        submission.query = ""
+        submission.navigate(.up)
+        submission.navigate(.down)
+        let selectedName = submission.matches[submission.selected].name
+        precondition(PreviewPickerKeyboard.handle(.return, modifiers: [], state: submission))
+        precondition(insertedNames.last == selectedName)
+        submission.query = "no-match"
+        precondition(submission.submissionToken == nil)
+        precondition(PreviewPickerKeyboard.handle(.return, modifiers: [], state: submission))
+        precondition(insertedNames.count == 3)
+        submission.query = ""
+        submission.showingSettings = true
+        precondition(submission.submissionToken == nil)
         let navigation = PickerState(defaults: layoutDefaults)
         navigation.tokens = (0..<10).map { DesignToken(name: "item-\($0)", value: "x", kind: "Token", source: "theme.css") }
         navigation.handleLayoutShortcut("2")
@@ -538,7 +563,9 @@ final class ColorCacheProtocol: URLProtocol {
         previewKeys.choose = { previewChoice = $0.name }
         precondition(!previewKeys.itemsFocused)
         precondition(PreviewPickerKeyboard.handle(.return, modifiers: [], state: previewKeys))
-        precondition(previewChoice == nil)
+        precondition(previewChoice == previewKeys.matches.first?.name)
+        precondition(!previewKeys.itemsFocused)
+        previewChoice = nil
         precondition(PreviewPickerKeyboard.handle(.upArrow, modifiers: [], state: previewKeys))
         precondition(previewKeys.itemsFocused && previewKeys.selected == 0)
         precondition(PreviewPickerKeyboard.handle(.downArrow, modifiers: [], state: previewKeys))
