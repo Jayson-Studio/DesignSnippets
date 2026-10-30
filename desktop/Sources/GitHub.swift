@@ -81,18 +81,27 @@ struct GitHubClient {
         }
         return Dictionary(grouping: result, by: \.id).compactMap { $0.value.first }.sorted { $0.full_name.localizedCaseInsensitiveCompare($1.full_name) == .orderedAscending }
     }
-    static func filePaths(_ input: [String]) throws -> [String] {
+    static func filePaths(_ input: [String], repository: Repository? = nil) throws -> [String] {
         var paths: [String] = []
         for raw in input {
-            let path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            var path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if path.hasPrefix("https://"), let repository {
+                guard let url = URL(string: path), url.host == "github.com", url.user == nil, url.password == nil,
+                      url.port == nil, url.query == nil else { throw SemanticError("Paste a GitHub file link from the active repository.") }
+                let prefix = "/\(repository.full_name)/blob/\(repository.default_branch)/"
+                guard url.path.hasPrefix(prefix) else {
+                    throw SemanticError("Choose a file from \(repository.full_name) on its \(repository.default_branch) branch.")
+                }
+                path = String(url.path.dropFirst(prefix.count))
+            }
             if path.isEmpty { continue }
             guard !path.hasPrefix("/"), !path.contains(":"), !path.contains("\\"),
                   !path.components(separatedBy: "/").contains(where: { $0 == ".." || $0 == "." || $0.isEmpty }),
                   !path.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
                 throw SemanticError("Use a repository-relative file path, such as src/styles/theme.css, rather than a URL or folder path.")
             }
-            guard ["css", "scss", "sass", "less", "json"].contains((path as NSString).pathExtension.lowercased()) else {
-                throw SemanticError("Choose a CSS, SCSS, Sass, Less, or JSON token file.")
+            guard ["css", "scss", "sass", "less", "json", "ts", "tsx"].contains((path as NSString).pathExtension.lowercased()) else {
+                throw SemanticError("Choose a stylesheet, token JSON, or TypeScript icon catalog/export file.")
             }
             if !paths.contains(path) { paths.append(path) }
         }
@@ -232,10 +241,19 @@ struct GitHubClient {
         func encodedPath(_ path: String) -> String {
             path.components(separatedBy: "/").map { $0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? $0 }.joined(separator: "/")
         }
-        let paths = try Self.filePaths(input)
+        let paths = try Self.filePaths(input, repository: repo)
         let branch = repo.default_branch.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? repo.default_branch
         await progress("Opening \(repo.default_branch)…")
         let commit: Commit = try await request("/repos/\(repo.full_name)/commits/\(branch)")
+        func iconSource(_ path: String) async throws -> String {
+            let file: File = try await request("/repos/\(repo.full_name)/contents/\(encodedPath(path))?ref=\(commit.sha)")
+            guard file.type == "file", file.size <= 1_000_000, file.encoding == "base64",
+                  let content = file.content, let data = Data(base64Encoded: content, options: .ignoreUnknownCharacters),
+                  data.count <= 1_000_000, let text = String(data: data, encoding: .utf8) else {
+                throw SemanticError("Could not read icon source \(path) as UTF-8 text under 1 MB.")
+            }
+            return text
+        }
         var tokens: [DesignToken] = []
         for (position, path) in paths.enumerated() {
             try Task.checkCancellation()
@@ -248,8 +266,20 @@ struct GitHubClient {
             guard file.encoding == "base64", let content = file.content,
                   let data = Data(base64Encoded: content, options: .ignoreUnknownCharacters),
                   let text = String(data: data, encoding: .utf8) else { throw SemanticError("Could not decode \(path) as UTF-8 text. Previous tokens are unchanged.") }
-            let parsed = TokenParser.parse(text, source: path)
-            guard !parsed.isEmpty else { throw SemanticError("No definitions found in \(path). Choose a stylesheet with CSS variables/classes, or token JSON with value or $value definitions. Previous tokens are unchanged.") }
+            let parsed: [DesignToken]
+            if ["ts", "tsx"].contains((path as NSString).pathExtension.lowercased()), text.contains("ICON_CATALOG") {
+                let module = try IconCatalog.semanticModule(text)
+                let semanticPath = try IconCatalog.relativePath(module, from: path)
+                let providerPath = try IconCatalog.relativePath("./provider-icons", from: semanticPath)
+                guard let src = semanticPath.range(of: "/src/") else { throw SemanticError("Icon catalog must belong to a package with a src directory.") }
+                let packagePath = String(semanticPath[..<src.lowerBound]) + "/package.json"
+                await progress("Reading icon catalog sources…")
+                let semantic = try await iconSource(semanticPath)
+                let providers = try await iconSource(providerPath)
+                let package = try await iconSource(packagePath)
+                parsed = try IconCatalog.tokens(catalog: text, semantic: semantic, providers: providers, package: package, source: path)
+            } else { parsed = TokenParser.parse(text, source: path) }
+            guard !parsed.isEmpty else { throw SemanticError("No definitions found in \(path). Choose a stylesheet with CSS variables/classes, token JSON with value or $value definitions, or a supported TypeScript icon export/catalog. Previous tokens are unchanged.") }
             tokens += parsed
         }
         let selected = TokenParser.unique(tokens)

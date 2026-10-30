@@ -120,7 +120,54 @@ final class MockProtocol: URLProtocol {
         }
         let normalized = try GitHubClient.filePaths([" src/styles/theme.css ", "", "src/styles/theme.css", "design tokens.json"])
         try check(normalized == ["src/styles/theme.css", "design tokens.json"], "Normalize and deduplicate file paths")
-        for invalid in ["../tokens.css", "/tokens.css", "https://github.com/test/tokens.css", "src/", "theme.ts"] {
+        let iconExports = """
+        // export const FakeIcon = nope
+        export const SearchIcon = createIcon()
+        export const StarFilledIcon = createIcon()
+        export interface PropsIcon {}
+        export { SearchIcon as FindIcon }
+        """
+        try check(IconCatalog.exports(iconExports) == ["FindIcon", "SearchIcon", "StarFilledIcon"], "Read icon exports and aliases without comments or types")
+        try check(TokenParser.parse(iconExports, source: "icons.tsx").allSatisfy { $0.kind == "Icon" }, "TypeScript icon classification")
+        let linked = try GitHubClient.filePaths(["https://github.com/test/system/blob/main/src/icons.tsx#L2"], repository: repos[0])
+        try check(linked == ["src/icons.tsx"], "Accept active repository GitHub file links")
+        for link in ["https://github.com/other/system/blob/main/src/icons.tsx", "https://github.com/test/system/blob/other/src/icons.tsx", "https://github.com/test/system/blob/main/../icons.tsx", "https://example.com/test/system/blob/main/icons.tsx"] {
+            do { _ = try GitHubClient.filePaths([link], repository: repos[0]); throw SemanticError("FAIL: unsafe link accepted") }
+            catch { try check(!error.localizedDescription.hasPrefix("FAIL:"), "Reject wrong repository/branch/host and traversal") }
+        }
+        let catalogFixture = """
+        import * as SemanticIcons from "../../icons/semantic-icons"
+        import * as GoIcons from "react-icons/go"
+        const GIT_ICON_PATTERN = /Git|Repo(?![a-z])|Diff|Commit|Branch|Fork|Merge|PullRequest|Tag|History/
+        const PROVIDER_ENTRIES = [["ServiceIcon", ServiceIcon, ServiceOutlineIcon]]
+        export const ICON_CATALOG = [...LUCIDE_ENTRIES, ...OCTICON_ENTRIES, ...PROVIDER_ENTRIES]
+        """
+        let providerFixture = "export const ServiceIcon = make(); export const ServiceOutlineIcon = make()"
+        let packageFixture = #"{"devDependencies":{"react-icons":"5.6.0"}}"#
+        let catalogPath = "packages/ui/src/reference/components/icon-catalog.ts"
+        var iconRequests = Set<String>()
+        MockProtocol.handler = { request in
+            if request.url!.path.contains("/commits/") { return (200, try data(["sha": "icon-revision"])) }
+            try check(request.url!.query == "ref=icon-revision", "Pin all icon sources to the same revision")
+            let prefix = "/repos/test/system/contents/"
+            let path = String(request.url!.path.dropFirst(prefix.count))
+            iconRequests.insert(path)
+            let fixtures = [catalogPath: catalogFixture, "packages/ui/src/icons/semantic-icons.tsx": iconExports,
+                            "packages/ui/src/icons/provider-icons.tsx": providerFixture, "packages/ui/package.json": packageFixture]
+            guard let content = fixtures[path] else { throw SemanticError("Unexpected icon dependency") }
+            return (200, try data(["type": "file", "size": content.utf8.count, "encoding": "base64", "content": Data(content.utf8).base64EncodedString()] as [String: Any]))
+        }
+        let iconIndex = try await client.index(repos[0], paths: ["https://github.com/test/system/blob/main/" + catalogPath], progress: { _ in })
+        try check(iconIndex.tokens.count == 23 && iconIndex.tokens.allSatisfy { $0.source == catalogPath && $0.kind == "Icon" }, "Import full catalog and preserve tab source grouping")
+        try check(iconIndex.tokens.contains { $0.name == "GoGitPullRequest" } && iconIndex.tokens.contains { $0.name == "ServiceOutlineIcon" }, "Include Git and outline provider variants")
+        try check(iconRequests.count == 4 && iconIndex.sourceFiles == [catalogPath], "Read only the catalog and three explicit dependencies")
+        do {
+            _ = try IconCatalog.tokens(catalog: catalogFixture, semantic: iconExports, providers: providerFixture, package: "{}", source: catalogPath)
+            throw SemanticError("FAIL: unknown icon dependency version accepted")
+        } catch { try check(!error.localizedDescription.hasPrefix("FAIL:"), "Reject unsupported dependency versions") }
+        do { _ = try IconCatalog.relativePath("../../escape", from: "src/icons.ts"); throw SemanticError("FAIL: traversal accepted") }
+        catch { try check(!error.localizedDescription.hasPrefix("FAIL:"), "Bound dependency resolution to the repository") }
+        for invalid in ["../tokens.css", "/tokens.css", "https://github.com/test/tokens.css", "src/", "theme.exe"] {
             do { _ = try GitHubClient.filePaths([invalid]); throw SemanticError("FAIL: invalid path accepted") }
             catch { try check(!error.localizedDescription.hasPrefix("FAIL:"), "Reject invalid token paths") }
         }

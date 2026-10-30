@@ -59,7 +59,8 @@ Sources: [GitHub device flow](https://docs.github.com/en/apps/creating-github-ap
 
 - CSS custom properties and class selectors in CSS, SCSS, Sass, and Less.
 - Nested token/theme/semantic JSON with `value` or `$value` leaves, including inherited `$type`.
-- Only explicitly selected files from the repository default branch, read through GitHub’s Contents API at a pinned commit. No repository tree listing or scan is requested.
+- TypeScript icon component exports and the Carrot UI unified icon catalog format.
+- Selected files and explicit icon-catalog dependencies from the repository default branch, read through GitHub’s Contents API at a pinned commit. No repository tree listing or scan is requested.
 - Classes and variables retain source paths; same-named declarations in different files remain separate so theme variants aren't silently overwritten.
 
 The parser is intentionally lightweight. It does not compile Sass, evaluate Tailwind/JavaScript configuration, resolve token aliases, compute cascade values, or watch repository changes. Use Refresh to rebuild the active index. Choose up to 20 files, each no larger than 1 MB. The selected paths are saved with the index and reused by Refresh. Use **Edit token files** to change them. Missing, unsupported, unreadable, or empty-definition files show a specific error and leave the previous index unchanged. Existing indices from older versions still load; their first refresh asks you to select files. CSS variables remain `--names`, classes retain their `.prefix`, and JSON token paths use dot notation.
@@ -96,10 +97,18 @@ an unconfigured preview as the one-time updater installation.
 
 The picker places tabs above the bottom search row. Left/Right wraps between tabs and preserves the query; Up/Down walks the visible entries. Each tab change selects its first result. Foundations opens by default and contains the project's previously imported files. The repository label and keyboard-instruction footer are hidden.
 
-The plus button after the last tab opens an empty tab and focuses its Title field. The search row remains visible but disabled while the tab is being created. The title appears in the tab strip as it is typed, up to 25 characters. Return slides the title step left and brings in the source-file step from the right; Return there saves the repository-relative CSS, SCSS, Sass, Less, or JSON token file. Its definitions then appear under the new title. An already imported file can be assigned to a tab without another download. The tab and file path are saved with the project so refreshes and relaunches keep them. The existing file-selection screen can still edit the project's imports. Previously cached indices remain compatible.
+The plus button after the last tab opens an empty tab and focuses its Title field. The search row remains visible but disabled while the tab is being created. The title appears in the tab strip as it is typed, up to 25 characters. Return slides the title step left and brings in the source-file step from the right; Return there saves the repository-relative CSS, SCSS, Sass, Less, JSON token file, or TypeScript icon export/catalog. Its definitions then appear under the new title. An already imported file can be assigned to a tab without another download. The tab and file path are saved with the project so refreshes and relaunches keep them. The existing file-selection screen can still edit the project's imports. Previously cached indices remain compatible.
 
 A tab containing only icon entries uses a compact grid regardless of its title; imported glyph values are previewed directly, while other definitions retain their token badges and names. The picker does not download a separate icon library or documentation catalog. Tabs without indexed entries display an empty state.
 
 Color definitions use circular swatches and show the referenced scale step with its resolved sRGB hex code. When a selected stylesheet refers to colors it does not define, indexing checks nearby palette stylesheets (such as `scales.css`) in the same repository directory. These supporting definitions are cached for previews but do not appear as picker entries. Older caches with color aliases are labeled in the Default view and refresh automatically after the next GitHub sign-in; the cached project remains available if that refresh fails.
 
 Tailwind color namespaces also appear under their utility names: `--background-color-*` as `bg-*`, `--text-color-*` as `text-*`, `--border-color-*` as `border-*`, and `--ring-color-*` as `ring-*`. These names are derived from imported definitions when displayed, so existing project caches gain them without another import.
+
+### Importing icon catalogs
+
+Add an Icons tab and enter a repository-relative `.ts`/`.tsx` path or paste a GitHub file link from the active repository's default branch. Links normalize to saved relative paths; other repositories and branches are rejected.
+
+The Carrot UI unified catalog adapter follows its semantic icon module, reads the adjacent provider exports and package manifest at the same pinned commit, and combines all semantic exports (including filled variants), listed provider variants, and the catalog's Git Octicons. The Git export-name metadata is bundled from `react-icons@5.6.0`; a different dependency version fails explicitly rather than silently importing an incomplete catalog. No TypeScript is executed and no npm dependency is fetched at runtime. Each source is limited to 1 MB.
+
+Icons import as searchable component names, grouped under the selected catalog file so the Icons tab and Refresh work normally. Choosing one inserts its exported name. React SVG artwork is not rendered; component icons use a readable name list. Concrete icon exports can also be imported directly; arbitrary dynamic JavaScript catalogs and wildcard barrel traversal are not supported.

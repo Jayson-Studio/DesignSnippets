@@ -346,7 +346,7 @@ enum LocalDefinition {
     }
     func importSelectedFiles() {
         guard let repo = selectedRepository else { return }
-        do { sync(repo, paths: try GitHubClient.filePaths(tokenFilePaths.components(separatedBy: .newlines))) }
+        do { sync(repo, paths: try GitHubClient.filePaths(tokenFilePaths.components(separatedBy: .newlines), repository: repo)) }
         catch { self.error = error.localizedDescription }
     }
     func addPickerTab(title rawTitle: String, path rawPath: String, completion: @escaping (Result<PickerTab, Error>) -> Void) {
@@ -358,7 +358,7 @@ enum LocalDefinition {
                   !title.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
                 throw SemanticError("Enter a tab title of up to 25 characters.")
             }
-            let path = try GitHubClient.filePaths([rawPath])[0]
+            let path = try GitHubClient.filePaths([rawPath], repository: index.repository)[0]
             let paths = index.sourceFiles ?? Array(Set(index.tokens.map(\.source))).sorted()
             let tabs = index.pickerTabs ?? []
             guard !["foundations", "new tab"].contains(title.lowercased()),

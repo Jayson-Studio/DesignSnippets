@@ -199,7 +199,7 @@ struct SemanticPanel: View {
                 }
             }
             Button { model.importSelectedFiles() } label: { Label("Load design tokens", systemImage: "arrow.down.doc").frame(maxWidth: .infinity) }.buttonStyle(ProtegiaButtonStyle()).disabled(model.busy || model.tokenFilePaths.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            Text("CSS variables, classes, and token JSON. Add another line if your system uses multiple files. Refresh will reuse these paths.").font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
+            Text("CSS variables, classes, token JSON, and TypeScript icon exports/catalogs. Enter one repository path or GitHub file link per line. Refresh reuses these files.").font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
         }
     }
     private func deviceView(_ code: DeviceCode) -> some View {

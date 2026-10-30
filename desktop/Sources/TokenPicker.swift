@@ -334,7 +334,9 @@ enum PickerSettingsSection: Hashable {
     var usesIconGrid: Bool {
         guard activeSection != "Foundations" else { return false }
         let entries = tokensForSection(activeSection)
-        return !entries.isEmpty && entries.allSatisfy { $0.pickerSection == "Icons" }
+        return !entries.isEmpty && entries.allSatisfy {
+            $0.pickerSection == "Icons" && !["ts", "tsx"].contains(($0.source as NSString).pathExtension.lowercased())
+        }
     }
     var matches: [DesignToken] {
         let candidates = tokensForSection(activeSection)
@@ -619,11 +621,11 @@ struct PickerView: View {
     private var tabSourceForm: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Choose a token file").font(Protegia.font(16, bold: true))
-            Text("Enter the file path in your active GitHub project for \(state.displayTitle(for: "New tab")).")
+            Text("Enter a repository path or GitHub file link from your active project for \(state.displayTitle(for: "New tab")).")
                 .font(Protegia.font(11)).foregroundStyle(Protegia.secondary)
             VStack(alignment: .leading, spacing: 6) {
                 Text("Source file").font(Protegia.font(11, bold: true)).foregroundStyle(Protegia.secondary)
-                TextField("src/tokens/icons.json", text: $state.tabFilePath)
+                TextField("Repository path or GitHub file link", text: $state.tabFilePath)
                     .textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
                     .padding(11).background(Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
                     .focused($tabPathFocused).onSubmit { state.submitTab() }
