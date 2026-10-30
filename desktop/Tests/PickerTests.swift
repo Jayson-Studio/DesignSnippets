@@ -380,6 +380,21 @@ final class ColorCacheProtocol: URLProtocol {
         layout.showingSettings = false
         layout.createTab()
         precondition(!PreviewPickerKeyboard.handle("3", modifiers: [], state: layout))
+        let appearanceKeys = PickerState(defaults: layoutDefaults)
+        appearanceKeys.query = "user"
+        precondition(PreviewPickerKeyboard.handle("<", modifiers: [.shift], state: appearanceKeys))
+        precondition(layoutDefaults.string(forKey: "pickerAppearance") == "light")
+        precondition(appearanceKeys.query == "user" && !appearanceKeys.itemsFocused)
+        precondition(!PreviewPickerKeyboard.handle(">", modifiers: [.command, .shift], state: appearanceKeys))
+        precondition(layoutDefaults.string(forKey: "pickerAppearance") == "light")
+        precondition(PreviewPickerKeyboard.handle(">", modifiers: [.shift], state: appearanceKeys))
+        precondition(layoutDefaults.string(forKey: "pickerAppearance") == "dark")
+        precondition(!PreviewPickerKeyboard.handle(",", modifiers: [], state: appearanceKeys))
+        appearanceKeys.showingSettings = true
+        precondition(!PreviewPickerKeyboard.handle("<", modifiers: [.shift], state: appearanceKeys))
+        appearanceKeys.showingSettings = false
+        appearanceKeys.createTab()
+        precondition(!PreviewPickerKeyboard.handle("<", modifiers: [.shift], state: appearanceKeys))
         let navigation = PickerState(defaults: layoutDefaults)
         navigation.tokens = (0..<10).map { DesignToken(name: "item-\($0)", value: "x", kind: "Token", source: "theme.css") }
         navigation.handleLayoutShortcut("2")

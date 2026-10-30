@@ -2,18 +2,18 @@ import AppKit
 import SwiftUI
 import CoreText
 
-/// Native mapping of Protegia.sys dark tokens. Source snapshot: Resources/DesignSystem/protegia-theme.css.
+/// Native mapping of Protegia.sys light and dark tokens. Source snapshot: Resources/DesignSystem/protegia-theme.css.
 /// Component contracts: Protegia/src/app/components/ui/{button,input}.tsx.
 enum Protegia {
-    static let base = color(24, 24, 27)       // --color-bg-base / neutral-900
-    static let level1 = color(39, 39, 42)     // --color-bg-level1 / neutral-800
-    static let level2 = color(63, 63, 69)     // --color-bg-level2 / neutral-700
-    static let text = color(250, 250, 250)   // --color-text-primary / neutral-50
-    static let secondary = color(212, 212, 216) // --color-text-secondary / neutral-300
+    static let base = adaptive(light: (250, 250, 250), dark: (24, 24, 27))
+    static let level1 = adaptive(light: (244, 244, 245), dark: (39, 39, 42))
+    static let level2 = adaptive(light: (228, 228, 231), dark: (63, 63, 69))
+    static let text = adaptive(light: (24, 24, 27), dark: (250, 250, 250))
+    static let secondary = adaptive(light: (82, 82, 90), dark: (212, 212, 216))
     static let tertiary = color(113, 113, 121)  // --color-text-tertiary / neutral-500
     static let muted = color(161, 161, 169)     // --color-interactive-muted / neutral-400
     static let accent = color(0, 255, 119)   // --color-primary-green
-    static let border = color(39, 39, 42)   // --color-border-default
+    static let border = adaptive(light: (228, 228, 231), dark: (39, 39, 42))
     static let primary = Color.white       // --color-interactive-primary
     static let inverse = Color.black       // --color-text-on-primary
     static let destructive = color(240, 28, 30) // --color-feedback-destructive
@@ -24,6 +24,12 @@ enum Protegia {
     static let spaceSM: CGFloat = 12
     static let spaceBase: CGFloat = 16
     static let spaceLG: CGFloat = 24
+    private static func adaptive(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let rgb = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+            return NSColor(srgbRed: rgb.0 / 255, green: rgb.1 / 255, blue: rgb.2 / 255, alpha: 1)
+        })
+    }
     static func color(_ r: Double, _ g: Double, _ b: Double) -> Color { Color(.sRGB, red: r / 255, green: g / 255, blue: b / 255, opacity: 1) }
     static func font(_ size: CGFloat, bold: Bool = false) -> Font { .custom(bold ? "Lato-Bold" : "Lato-Regular", fixedSize: size) }
     static func registerFonts() {

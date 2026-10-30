@@ -68,7 +68,9 @@ enum PickerLayout {
 @MainActor enum PreviewPickerKeyboard {
     @discardableResult static func handle(_ key: KeyEquivalent, modifiers: SwiftUI.EventModifiers, state: PickerState) -> Bool {
         guard !state.creatingTab && !state.showingSettings else { return false }
-        guard modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return false }
+        guard modifiers.intersection([.command, .control, .option]).isEmpty else { return false }
+        if state.handleAppearanceShortcut(String(key.character)) { return true }
+        guard !modifiers.contains(.shift) else { return false }
         if state.handleLayoutShortcut(String(key.character)) { return true }
         switch key {
         case .leftArrow: state.navigate(.left)
@@ -169,7 +171,7 @@ enum PickerSettingsSection: Hashable {
     var beginSettings: (() -> Void)?
     var endSettings: (() -> Void)?
     var returnFromSettings: (() -> Void)?
-    private let defaults: UserDefaults
+    fileprivate let defaults: UserDefaults
     private var repositoryID: Int?
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -200,6 +202,11 @@ enum PickerSettingsSection: Hashable {
               let number = Int(text), let layout = PickerDisplayLayout(rawValue: number) else { return false }
         displayLayout = layout
         defaults.set(layout.rawValue, forKey: layoutPreferenceKey)
+        return true
+    }
+    @discardableResult func handleAppearanceShortcut(_ text: String) -> Bool {
+        guard !creatingTab, !showingSettings, text == "<" || text == ">" else { return false }
+        defaults.set(text == "<" ? "light" : "dark", forKey: "pickerAppearance")
         return true
     }
     private var layoutPreferenceKey: String {
@@ -486,6 +493,13 @@ enum PickerSettingsSection: Hashable {
 }
 struct PickerView: View {
     @ObservedObject var state: PickerState
+    @AppStorage private var appearance: String
+    init(state: PickerState, allowsDragging: Bool = true, editableSearch: Bool = false) {
+        self.state = state
+        self.allowsDragging = allowsDragging
+        self.editableSearch = editableSearch
+        _appearance = AppStorage(wrappedValue: "dark", "pickerAppearance", store: state.defaults)
+    }
     var allowsDragging = true
     var editableSearch = false
     @Namespace private var tabSelection
@@ -651,7 +665,7 @@ struct PickerView: View {
                 .disabled(state.creatingTab)
                 .background { if allowsDragging { PickerDragHeader(state: state) } }
         }.frame(width: PickerLayout.width, height: PickerLayout.height).background(Protegia.base)
-        .foregroundStyle(Protegia.text).font(Protegia.font(12)).tint(Protegia.accent).preferredColorScheme(.dark)
+        .foregroundStyle(Protegia.text).font(Protegia.font(12)).tint(Protegia.accent).preferredColorScheme(appearance == "light" ? .light : .dark)
         .onChange(of: state.creatingTab) { _, creating in
             if creating { DispatchQueue.main.async { tabTitleFocused = true } }
             else { tabTitleFocused = false; tabPathFocused = false }
@@ -1298,6 +1312,9 @@ struct PickerDismissalGate {
         event.keyboardGetUnicodeString(maxStringLength: chars.count, actualStringLength: &length, unicodeString: &chars)
         let text = String(utf16CodeUnits: chars, count: min(length, chars.count))
         let flags = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
+        if panel?.isVisible == true, front.processIdentifier == pid,
+           flags.intersection([.maskCommand, .maskControl, .maskAlternate]).isEmpty,
+           state.handleAppearanceShortcut(text) { return true }
         if panel?.isVisible == true, front.processIdentifier == pid, flags.isEmpty,
            state.handleLayoutShortcut(text) { return true }
         if code == 49 && flags == [.maskControl, .maskAlternate] {

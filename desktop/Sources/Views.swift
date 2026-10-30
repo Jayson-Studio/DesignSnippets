@@ -3,6 +3,7 @@ import AppKit
 
 let semanticGreen = Protegia.accent
 struct SemanticPanel: View {
+    @AppStorage("pickerAppearance") private var appearance = "dark"
     @ObservedObject var model: AppModel
     var appVersion: String
     var onDismiss: (() -> Void)?
@@ -79,7 +80,7 @@ struct SemanticPanel: View {
                 }.padding(.horizontal, Protegia.spaceLG).padding(.vertical, 13)
             }
         }.frame(width: 420, height: selectedTab == "Preview" ? 480 : 620).background(Protegia.base)
-        .foregroundStyle(Protegia.text).font(Protegia.font(14)).tint(Protegia.accent).preferredColorScheme(.dark)
+        .foregroundStyle(Protegia.text).font(Protegia.font(14)).tint(Protegia.accent).preferredColorScheme(appearance == "light" ? .light : .dark)
         .onChange(of: selectedTab) { _, tab in onTabChange?(tab) }
         .onChange(of: model.screen) { _, screen in
             search = ""

@@ -166,6 +166,12 @@ import CoreText
             vectorPicker.navigate(.down)
             vectorPicker.navigate(.right)
         }
+        try render(PickerView(state: vectorPicker), name: "token-picker-light") {
+            vectorPicker.handleAppearanceShortcut("<")
+        }
+        try render(PickerView(state: vectorPicker), name: "token-picker-dark") {
+            vectorPicker.handleAppearanceShortcut(">")
+        }
         print("Scrolling grid: \(vectorPicker.columnCount) columns at \(vectorPicker.gridContentWidth)pt; selected \(vectorPicker.selected)")
         print("Rendered onboarding, GitHub setup, preferences, and token picker.")
     }
