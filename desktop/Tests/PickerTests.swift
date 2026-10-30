@@ -165,7 +165,23 @@ final class ColorCacheProtocol: URLProtocol {
                                        tokens: ranked.tokens + [DesignToken(name: "--radius-small", value: "8px", kind: "Radius", source: "theme.css")],
                                        syncedAt: Date(), revision: "fixture",
                                        pickerTabs: [PickerTab(title: "Components", path: "components.json"), PickerTab(title: "General", path: "general.json")])
+        precondition(PickerShortcut.load(from: settingsDefaults) == .standard)
+        let customShortcut = PickerShortcut(keyCode: 2, modifiers: CGEventFlags([.maskCommand, .maskShift]).rawValue, keyLabel: "D")
+        precondition(customShortcut.isValid)
+        precondition(customShortcut.displayName == "⇧⌘D")
+        precondition(customShortcut.matches(code: 2, flags: [.maskCommand, .maskShift, .maskAlphaShift]))
+        precondition(!customShortcut.matches(code: 2, flags: [.maskCommand]))
+        precondition(!customShortcut.matches(code: 49, flags: [.maskCommand, .maskShift]))
         let settings = PickerState(defaults: settingsDefaults)
+        settings.setToggleShortcut(customShortcut)
+        precondition(PickerState(defaults: settingsDefaults).toggleShortcut == customShortcut)
+        settings.setToggleShortcut(PickerShortcut(keyCode: 2, modifiers: 0, keyLabel: "D"))
+        precondition(settings.toggleShortcut == customShortcut)
+        settings.setToggleShortcut(.standard)
+        precondition(PickerShortcut.load(from: settingsDefaults) == .standard)
+        settingsDefaults.set(Data("invalid".utf8), forKey: PickerShortcut.preferenceKey)
+        precondition(PickerShortcut.load(from: settingsDefaults) == .standard)
+
         settings.updateIndex(settingsIndex)
         precondition(settings.sections == ["Foundations", "Components", "General"])
         settings.toggleSettings()

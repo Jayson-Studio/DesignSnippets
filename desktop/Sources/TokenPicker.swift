@@ -3,6 +3,94 @@ import ApplicationServices
 import Carbon
 import SwiftUI
 
+struct PickerShortcut: Codable, Equatable {
+    let keyCode: Int64
+    let modifiers: UInt64
+    let keyLabel: String
+    static let preferenceKey = "pickerToggleShortcut"
+    static let modifierMask: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate, .maskShift]
+    static let standard = PickerShortcut(keyCode: 49, modifiers: CGEventFlags([.maskControl, .maskAlternate]).rawValue, keyLabel: "Space")
+
+    var isValid: Bool {
+        let flags = CGEventFlags(rawValue: modifiers)
+        return (0...127).contains(keyCode) && ![53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63].contains(keyCode)
+            && !keyLabel.isEmpty && flags.subtracting(Self.modifierMask).isEmpty
+            && !flags.intersection([.maskCommand, .maskControl, .maskAlternate]).isEmpty
+    }
+    var displayName: String {
+        let flags = CGEventFlags(rawValue: modifiers)
+        var label = ""
+        if flags.contains(.maskControl) { label += "⌃" }
+        if flags.contains(.maskAlternate) { label += "⌥" }
+        if flags.contains(.maskShift) { label += "⇧" }
+        if flags.contains(.maskCommand) { label += "⌘" }
+        return label + keyLabel
+    }
+    func matches(code: Int64, flags: CGEventFlags) -> Bool {
+        code == keyCode && flags.intersection(Self.modifierMask).rawValue == modifiers
+    }
+    static func load(from defaults: UserDefaults = .standard) -> Self {
+        guard let data = defaults.data(forKey: preferenceKey),
+              let saved = try? JSONDecoder().decode(Self.self, from: data), saved.isValid else { return .standard }
+        return saved
+    }
+}
+
+private struct ShortcutRecorder: NSViewRepresentable {
+    @ObservedObject var state: PickerState
+    func makeNSView(context: Context) -> ShortcutButton {
+        let button = ShortcutButton()
+        button.bezelStyle = .rounded
+        button.target = button
+        button.action = #selector(ShortcutButton.record)
+        button.setAccessibilityLabel("Toggle Design Snippets shortcut")
+        return button
+    }
+    func updateNSView(_ button: ShortcutButton, context: Context) {
+        button.shortcut = state.toggleShortcut
+        button.onChange = { state.setToggleShortcut($0) }
+        if !button.recording { button.title = state.toggleShortcut.displayName }
+    }
+
+    final class ShortcutButton: NSButton {
+        var shortcut = PickerShortcut.standard
+        var onChange: ((PickerShortcut) -> Void)?
+        var recording = false
+        override var acceptsFirstResponder: Bool { true }
+        @objc func record() {
+            window?.makeFirstResponder(self)
+            recording = true
+            title = "Press shortcut…"
+        }
+        override func resignFirstResponder() -> Bool {
+            recording = false
+            title = shortcut.displayName
+            return super.resignFirstResponder()
+        }
+        override func performKeyEquivalent(with event: NSEvent) -> Bool {
+            guard recording, window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
+            keyDown(with: event)
+            return true
+        }
+        override func keyDown(with event: NSEvent) {
+            guard recording else { super.keyDown(with: event); return }
+            if event.keyCode == 53 { window?.makeFirstResponder(nil); return }
+            guard let cgEvent = event.cgEvent else { return }
+            let labels: [UInt16: String] = [49: "Space", 36: "Return", 48: "Tab", 51: "Delete", 117: "Forward Delete",
+                123: "←", 124: "→", 125: "↓", 126: "↑", 115: "Home", 119: "End", 116: "Page Up", 121: "Page Down",
+                122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6", 98: "F7", 100: "F8",
+                101: "F9", 109: "F10", 103: "F11", 111: "F12"]
+            let candidate = PickerShortcut(keyCode: Int64(event.keyCode),
+                modifiers: cgEvent.flags.intersection(PickerShortcut.modifierMask).rawValue,
+                keyLabel: labels[event.keyCode] ?? event.charactersIgnoringModifiers?.uppercased() ?? "")
+            guard candidate.isValid else { title = "Include ⌘, ⌃ or ⌥"; return }
+            shortcut = candidate
+            onChange?(candidate)
+            window?.makeFirstResponder(nil)
+        }
+    }
+}
+
 enum PickerLayout {
     static let width: CGFloat = 420
     static let height: CGFloat = 320
@@ -55,6 +143,7 @@ enum PickerSettingsSection: Hashable {
     @Published var openError: String? = nil
     @Published var showingSettings = false
     @Published var settingsSection: PickerSettingsSection = .general
+    @Published private(set) var toggleShortcut = PickerShortcut.standard
     @Published var preferredEditor = PreferredEditor.vscode.rawValue
     @Published var checkoutPath = ""
     @Published var checkoutError: String? = nil
@@ -70,6 +159,7 @@ enum PickerSettingsSection: Hashable {
     private var repositoryID: Int?
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        toggleShortcut = PickerShortcut.load(from: defaults)
         if let savedEditor = defaults.string(forKey: "pickerPreferredEditor"),
            PreferredEditor(rawValue: savedEditor) != nil { preferredEditor = savedEditor }
     }
@@ -87,6 +177,11 @@ enum PickerSettingsSection: Hashable {
         showingSettings = false
         settingsSection = .general
         returnFromSettings?()
+    }
+    func setToggleShortcut(_ shortcut: PickerShortcut) {
+        guard shortcut.isValid, let data = try? JSONEncoder().encode(shortcut) else { return }
+        defaults.set(data, forKey: PickerShortcut.preferenceKey)
+        toggleShortcut = shortcut
     }
     func setPreferredEditor(_ editor: String) {
         guard PreferredEditor(rawValue: editor) != nil else { return }
@@ -473,6 +568,15 @@ struct PickerView: View {
             }.buttonStyle(.plain).foregroundStyle(Protegia.secondary)
                 .accessibilityLabel("Back to definitions")
             if state.settingsSection == .general {
+                HStack(spacing: 10) {
+                    Text("Toggle shortcut")
+                    ShortcutRecorder(state: state).fixedSize()
+                    Button("Reset") { state.setToggleShortcut(.standard) }
+                        .buttonStyle(.plain).foregroundStyle(Protegia.secondary)
+                        .disabled(state.toggleShortcut == .standard)
+                }
+                Text("Click to record a shortcut with ⌘, ⌃ or ⌥. Escape cancels.")
+                    .font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
                 HStack(spacing: 10) {
                     Text("Preferred editor")
                     Menu {
@@ -1060,7 +1164,13 @@ struct PickerDismissalGate {
         event.keyboardGetUnicodeString(maxStringLength: chars.count, actualStringLength: &length, unicodeString: &chars)
         let text = String(utf16CodeUnits: chars, count: min(length, chars.count))
         let flags = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
-        if code == 49 && flags == [.maskControl, .maskAlternate] { begin(front.processIdentifier, hasHash: false); return true }
+        if PickerShortcut.load().matches(code: code, flags: flags) {
+            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+                if pendingTrigger || panel?.isVisible == true { dismiss() }
+                else { begin(front.processIdentifier, hasHash: false) }
+            }
+            return true
+        }
         // Printable Shift characters can filter; modified navigation and editor
         // shortcuts still dismiss and pass through unchanged.
         let isHashTrigger = text == "#" && flags.intersection([.maskCommand, .maskControl, .maskAlternate]).isEmpty
