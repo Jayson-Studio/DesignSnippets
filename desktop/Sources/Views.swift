@@ -73,7 +73,7 @@ struct SemanticPanel: View {
                 ProtegiaDivider()
                 HStack {
                     Circle().fill(model.pickerEnabled ? Protegia.accent : Protegia.tertiary).frame(width: 5, height: 5)
-                    Text(model.pickerEnabled ? "# picker is on" : "# picker is off").font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
+                    Text(model.pickerEnabled ? "Snippets picker is on" : "Snippets picker is off").font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
                     Spacer()
                     Button("Preferences…") { model.screen = "preferences" }.buttonStyle(.plain).font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
                 }.padding(.horizontal, Protegia.spaceLG).padding(.vertical, 13)
@@ -113,7 +113,7 @@ struct SemanticPanel: View {
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Your system. Wherever you type.").font(Protegia.font(18, bold: true))
-                    Text("Type # in a compatible text field, find a definition, and press Return to insert its name.").font(Protegia.font(12)).foregroundStyle(Protegia.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text("Type your trigger (default: --) in a compatible text field, find a definition, and press Return to insert its name.").font(Protegia.font(12)).foregroundStyle(Protegia.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if !model.pickerEnabled { Button(model.permissionGranted ? "Start system-wide picker" : "Allow Accessibility") { model.enablePicker() }.buttonStyle(ProtegiaButtonStyle()).tint(semanticGreen).frame(maxWidth: .infinity) }
                 if let feedback = model.pickerFeedback { Text(feedback).font(Protegia.font(12)).foregroundStyle(Protegia.secondary) }
@@ -132,7 +132,7 @@ struct SemanticPanel: View {
                 Image(systemName: "number").font(Protegia.font(35, bold: true)).foregroundStyle(semanticGreen).padding(.top, 14)
                 Text("Your design system,\nright at your fingertips.").font(Protegia.font(28, bold: true)).tracking(-0.6)
                 Text("Connect GitHub, choose a project, and bring its semantic names into the apps you already use.").font(Protegia.font(14)).foregroundStyle(Protegia.secondary).lineSpacing(4)
-                VStack(alignment: .leading, spacing: Protegia.spaceBase) { onboardingRow("1", "Connect your GitHub account"); onboardingRow("2", "Choose a design-system project"); onboardingRow("#", "Reference tokens wherever you type") }.padding(.vertical, 9)
+                VStack(alignment: .leading, spacing: Protegia.spaceBase) { onboardingRow("1", "Connect your GitHub account"); onboardingRow("2", "Choose a design-system project"); onboardingRow("--", "Reference tokens wherever you type") }.padding(.vertical, 9)
             }
             if model.account == nil {
                 Button { model.connectGitHub() } label: { Label("Connect GitHub", systemImage: "link").frame(maxWidth: .infinity).padding(.vertical, 5) }.buttonStyle(ProtegiaButtonStyle()).tint(semanticGreen).disabled(model.busy)

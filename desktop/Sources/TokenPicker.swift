@@ -3,91 +3,58 @@ import ApplicationServices
 import Carbon
 import SwiftUI
 
-struct PickerShortcut: Codable, Equatable {
-    let keyCode: Int64
-    let modifiers: UInt64
-    let keyLabel: String
-    static let preferenceKey = "pickerToggleShortcut"
-    static let modifierMask: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate, .maskShift]
-    static let standard = PickerShortcut(keyCode: 49, modifiers: CGEventFlags([.maskControl, .maskAlternate]).rawValue, keyLabel: "Space")
-
-    var isValid: Bool {
-        let flags = CGEventFlags(rawValue: modifiers)
-        return (0...127).contains(keyCode) && ![53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63].contains(keyCode)
-            && !keyLabel.isEmpty && flags.subtracting(Self.modifierMask).isEmpty
-            && !flags.intersection([.maskCommand, .maskControl, .maskAlternate]).isEmpty
+enum PickerTrigger {
+    static let standard = "--"
+    static let preferenceKey = "pickerTypedTrigger"
+    static func isValid(_ value: String) -> Bool {
+        (1...4).contains(value.count) && value.unicodeScalars.allSatisfy { (33...126).contains($0.value) }
     }
-    var displayName: String {
-        let flags = CGEventFlags(rawValue: modifiers)
-        var label = ""
-        if flags.contains(.maskControl) { label += "⌃" }
-        if flags.contains(.maskAlternate) { label += "⌥" }
-        if flags.contains(.maskShift) { label += "⇧" }
-        if flags.contains(.maskCommand) { label += "⌘" }
-        return label + keyLabel
-    }
-    func matches(code: Int64, flags: CGEventFlags) -> Bool {
-        code == keyCode && flags.intersection(Self.modifierMask).rawValue == modifiers
-    }
-    static func load(from defaults: UserDefaults = .standard) -> Self {
-        guard let data = defaults.data(forKey: preferenceKey),
-              let saved = try? JSONDecoder().decode(Self.self, from: data), saved.isValid else { return .standard }
+    static func load(from defaults: UserDefaults = .standard) -> String {
+        guard let saved = defaults.string(forKey: preferenceKey), isValid(saved) else { return standard }
         return saved
     }
 }
 
-private struct ShortcutRecorder: NSViewRepresentable {
-    @ObservedObject var state: PickerState
-    func makeNSView(context: Context) -> ShortcutButton {
-        let button = ShortcutButton()
-        button.bezelStyle = .rounded
-        button.target = button
-        button.action = #selector(ShortcutButton.record)
-        button.setAccessibilityLabel("Toggle Design Snippets shortcut")
-        return button
+// Keep only a possible trigger prefix, scoped to uninterrupted typing in one app.
+struct PickerTriggerMatcher {
+    private var prefix = ""
+    private var owner: pid_t?
+    private var configuredTrigger = ""
+    mutating func reset() { prefix = ""; owner = nil }
+    mutating func append(_ text: String, trigger: String, pid: pid_t) -> Bool {
+        if owner != pid || configuredTrigger != trigger { reset() }
+        owner = pid; configuredTrigger = trigger
+        guard text.count == 1, PickerTrigger.isValid(text) else { reset(); return false }
+        prefix += text
+        while !prefix.isEmpty && !trigger.hasPrefix(prefix) { prefix.removeFirst() }
+        if prefix == trigger { reset(); return true }
+        return false
     }
-    func updateNSView(_ button: ShortcutButton, context: Context) {
-        button.shortcut = state.toggleShortcut
-        button.onChange = { state.setToggleShortcut($0) }
-        if !button.recording { button.title = state.toggleShortcut.displayName }
-    }
+}
 
-    final class ShortcutButton: NSButton {
-        var shortcut = PickerShortcut.standard
-        var onChange: ((PickerShortcut) -> Void)?
-        var recording = false
-        override var acceptsFirstResponder: Bool { true }
-        @objc func record() {
-            window?.makeFirstResponder(self)
-            recording = true
-            title = "Press shortcut…"
-        }
-        override func resignFirstResponder() -> Bool {
-            recording = false
-            title = shortcut.displayName
-            return super.resignFirstResponder()
-        }
-        override func performKeyEquivalent(with event: NSEvent) -> Bool {
-            guard recording, window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
-            keyDown(with: event)
-            return true
-        }
-        override func keyDown(with event: NSEvent) {
-            guard recording else { super.keyDown(with: event); return }
-            if event.keyCode == 53 { window?.makeFirstResponder(nil); return }
-            guard let cgEvent = event.cgEvent else { return }
-            let labels: [UInt16: String] = [49: "Space", 36: "Return", 48: "Tab", 51: "Delete", 117: "Forward Delete",
-                123: "←", 124: "→", 125: "↓", 126: "↑", 115: "Home", 119: "End", 116: "Page Up", 121: "Page Down",
-                122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6", 98: "F7", 100: "F8",
-                101: "F9", 109: "F10", 103: "F11", 111: "F12"]
-            let candidate = PickerShortcut(keyCode: Int64(event.keyCode),
-                modifiers: cgEvent.flags.intersection(PickerShortcut.modifierMask).rawValue,
-                keyLabel: labels[event.keyCode] ?? event.charactersIgnoringModifiers?.uppercased() ?? "")
-            guard candidate.isValid else { title = "Include ⌘, ⌃ or ⌥"; return }
-            shortcut = candidate
-            onChange?(candidate)
-            window?.makeFirstResponder(nil)
-        }
+private struct TriggerSettings: View {
+    @ObservedObject var state: PickerState
+    @State private var draft = ""
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Text("Typed trigger")
+                TextField("--", text: $draft)
+                    .textFieldStyle(.roundedBorder).frame(width: 70)
+                    .accessibilityLabel("Typed trigger to open Design Snippets")
+                    .onSubmit { state.setTypedTrigger(draft) }
+                Button("Save") { state.setTypedTrigger(draft) }
+                    .disabled(!PickerTrigger.isValid(draft) || draft == state.typedTrigger)
+                Button("Reset") { draft = PickerTrigger.standard; state.setTypedTrigger(draft) }
+                    .buttonStyle(.plain).foregroundStyle(Protegia.secondary)
+            }
+            Text("Type this sequence in an editor to open snippets. Use 1–4 visible ASCII characters, without spaces.")
+                .font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
+            if !PickerTrigger.isValid(draft) {
+                Text("Enter 1–4 letters, numbers, or symbols without spaces.")
+                    .font(Protegia.font(10)).foregroundStyle(Protegia.destructive)
+            }
+        }.onAppear { draft = state.typedTrigger }
     }
 }
 
@@ -99,7 +66,7 @@ enum PickerLayout {
 
 @MainActor enum PreviewPickerKeyboard {
     @discardableResult static func handle(_ key: KeyEquivalent, modifiers: SwiftUI.EventModifiers, state: PickerState) -> Bool {
-        guard !state.creatingTab else { return false }
+        guard !state.creatingTab && !state.showingSettings else { return false }
         guard modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return false }
         switch key {
         case .leftArrow: state.moveSection(-1)
@@ -143,7 +110,7 @@ enum PickerSettingsSection: Hashable {
     @Published var openError: String? = nil
     @Published var showingSettings = false
     @Published var settingsSection: PickerSettingsSection = .general
-    @Published private(set) var toggleShortcut = PickerShortcut.standard
+    @Published private(set) var typedTrigger = PickerTrigger.standard
     @Published var preferredEditor = PreferredEditor.vscode.rawValue
     @Published var checkoutPath = ""
     @Published var checkoutError: String? = nil
@@ -159,7 +126,7 @@ enum PickerSettingsSection: Hashable {
     private var repositoryID: Int?
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        toggleShortcut = PickerShortcut.load(from: defaults)
+        typedTrigger = PickerTrigger.load(from: defaults)
         if let savedEditor = defaults.string(forKey: "pickerPreferredEditor"),
            PreferredEditor(rawValue: savedEditor) != nil { preferredEditor = savedEditor }
     }
@@ -178,10 +145,10 @@ enum PickerSettingsSection: Hashable {
         settingsSection = .general
         returnFromSettings?()
     }
-    func setToggleShortcut(_ shortcut: PickerShortcut) {
-        guard shortcut.isValid, let data = try? JSONEncoder().encode(shortcut) else { return }
-        defaults.set(data, forKey: PickerShortcut.preferenceKey)
-        toggleShortcut = shortcut
+    func setTypedTrigger(_ trigger: String) {
+        guard PickerTrigger.isValid(trigger) else { return }
+        defaults.set(trigger, forKey: PickerTrigger.preferenceKey)
+        typedTrigger = trigger
     }
     func setPreferredEditor(_ editor: String) {
         guard PreferredEditor(rawValue: editor) != nil else { return }
@@ -568,15 +535,7 @@ struct PickerView: View {
             }.buttonStyle(.plain).foregroundStyle(Protegia.secondary)
                 .accessibilityLabel("Back to definitions")
             if state.settingsSection == .general {
-                HStack(spacing: 10) {
-                    Text("Toggle shortcut")
-                    ShortcutRecorder(state: state).fixedSize()
-                    Button("Reset") { state.setToggleShortcut(.standard) }
-                        .buttonStyle(.plain).foregroundStyle(Protegia.secondary)
-                        .disabled(state.toggleShortcut == .standard)
-                }
-                Text("Click to record a shortcut with ⌘, ⌃ or ⌥. Escape cancels.")
-                    .font(Protegia.font(10)).foregroundStyle(Protegia.secondary)
+                TriggerSettings(state: state)
                 HStack(spacing: 10) {
                     Text("Preferred editor")
                     Menu {
@@ -854,19 +813,19 @@ enum PickerEditor {
     static func usesManualPosition(bundle: String) -> Bool { bundle == "com.openai.codex" }
     // Without an AX range, replacement is limited to an uninterrupted session
     // of simple token characters. Composed/IME text retains copy-only behavior.
-    static func trackedReplacementCount(bundle: String, query: String, hasHash: Bool, active: Bool) -> Int? {
+    static func trackedReplacementCount(bundle: String, query: String, trigger: String, active: Bool) -> Int? {
         guard active, usesManualPosition(bundle: bundle), query.unicodeScalars.allSatisfy({
             $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "_-.:/".unicodeScalars.contains($0))
         }) else { return nil }
-        return query.count + (hasHash ? 1 : 0)
+        return query.count + trigger.count
     }
     static func accepts(role: String, subrole: String, editable: Bool, writableSelection: Bool) -> Bool {
         guard role != "AXSecureTextField", subrole != kAXSecureTextFieldSubrole else { return false }
         return [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(role)
             || editable || writableSelection
     }
-    static func triggerRange(selection: CFRange?, query: String, hasHash: Bool, observed: String?) -> CFRange? {
-        let expected = (hasHash ? "#" : "") + query
+    static func triggerRange(selection: CFRange?, query: String, trigger: String, observed: String?) -> CFRange? {
+        let expected = trigger + query
         guard let selection, selection.length == 0, selection.location >= expected.utf16.count,
               observed == expected else { return nil }
         return CFRange(location: selection.location - expected.utf16.count, length: 0)
@@ -909,7 +868,8 @@ struct PickerDismissalGate {
     private var panel: FloatingPanel?
     private var target: AXUIElement?
     private var pid: pid_t = 0
-    private var triggerHasHash = true
+    private var sessionTrigger = ""
+    private var triggerMatcher = PickerTriggerMatcher()
     private var initialRange: CFRange?
     private var placementTask: Task<Void, Never>?
     private var pendingOutsideDismiss: DispatchWorkItem?
@@ -1026,6 +986,7 @@ struct PickerDismissalGate {
         notification = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] notification in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                self.triggerMatcher.reset()
                 let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
                 let bundleID = app?.bundleIdentifier ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 if self.openingDefinition { return }
@@ -1135,15 +1096,17 @@ struct PickerDismissalGate {
         if IsSecureEventInputEnabled() { dismiss(); return false }
         if event.getIntegerValueField(.eventSourceUserData) == eventMarker || injected { return false }
         // NSOpenPanel runs a nested event loop while opening a definition. Its
-        // clicks and typing belong to the chooser, not the original # session.
-        if openingDefinition { return false }
+        // clicks and typing belong to the chooser, not the original trigger session.
+        if openingDefinition { triggerMatcher.reset(); return false }
         if PickerCapture.isScreenshotApp(NSWorkspace.shared.frontmostApplication?.bundleIdentifier) {
+            triggerMatcher.reset()
             pendingOutsideDismiss?.cancel()
             pendingOutsideDismiss = nil
             dismissalGate.cancel()
             return false
         }
         if type == .leftMouseDown || type == .rightMouseDown {
+            triggerMatcher.reset()
             if type == .leftMouseDown, let app = NSWorkspace.shared.frontmostApplication,
                app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
                panel?.frame.contains(NSEvent.mouseLocation) != true {
@@ -1154,7 +1117,7 @@ struct PickerDismissalGate {
             }
             return false
         }
-        if state.creatingTab || state.showingSettings { return false }
+        if state.creatingTab || state.showingSettings { triggerMatcher.reset(); return false }
         guard type == .keyDown, let front = NSWorkspace.shared.frontmostApplication,
               let bundle = front.bundleIdentifier, model.allowsPicker(in: bundle), front.processIdentifier != ProcessInfo.processInfo.processIdentifier,
               !model.tokens.isEmpty else { dismiss(); return false }
@@ -1164,22 +1127,27 @@ struct PickerDismissalGate {
         event.keyboardGetUnicodeString(maxStringLength: chars.count, actualStringLength: &length, unicodeString: &chars)
         let text = String(utf16CodeUnits: chars, count: min(length, chars.count))
         let flags = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
-        if PickerShortcut.load().matches(code: code, flags: flags) {
+        if code == 49 && flags == [.maskControl, .maskAlternate] {
             if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
                 if pendingTrigger || panel?.isVisible == true { dismiss() }
-                else { begin(front.processIdentifier, hasHash: false) }
+                else { begin(front.processIdentifier, trigger: "") }
             }
             return true
         }
         // Printable Shift characters can filter; modified navigation and editor
         // shortcuts still dismiss and pass through unchanged.
-        let isHashTrigger = text == "#" && flags.intersection([.maskCommand, .maskControl, .maskAlternate]).isEmpty
         if !flags.intersection([.maskCommand, .maskControl, .maskAlternate]).isEmpty ||
-            (flags.contains(.maskShift) && !isHashTrigger && !PickerState.isQueryText(text)) {
+            (flags.contains(.maskShift) && !PickerState.isQueryText(text) && !PickerTrigger.isValid(text)) {
             scheduleOutsideDismiss(); return false
         }
-        // A fresh # starts a new query, even if an earlier picker is still open.
-        if isHashTrigger { begin(front.processIdentifier, hasHash: true); return false }
+        if !pendingTrigger && target == nil && !copyOnlyFallback {
+            let trigger = PickerTrigger.load()
+            if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { triggerMatcher.reset() }
+            else if triggerMatcher.append(text, trigger: trigger, pid: front.processIdentifier) {
+                begin(front.processIdentifier, trigger: trigger)
+                return false
+            }
+        }
         // Leave the space in the editor but stop tracking the completed query.
         if (pendingTrigger || target != nil || copyOnlyFallback),
            text.rangeOfCharacter(from: .whitespaces) != nil, code != 48 {
@@ -1223,10 +1191,10 @@ struct PickerDismissalGate {
             }
             dismiss()
         }
-        if text == "#" { begin(front.processIdentifier, hasHash: true) }
         return false
     }
     private func scheduleOutsideDismiss() {
+        triggerMatcher.reset()
         guard pendingTrigger || target != nil || copyOnlyFallback || panel?.isVisible == true else { return }
         pendingOutsideDismiss?.cancel()
         dismissalGate.outsideInput()
@@ -1242,9 +1210,9 @@ struct PickerDismissalGate {
         // the outside interaction should close the picker.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.75, execute: pending)
     }
-    private func begin(_ pid: pid_t, hasHash: Bool) {
+    private func begin(_ pid: pid_t, trigger: String) {
         dismiss()
-        self.pid = pid; triggerHasHash = hasHash; pendingTrigger = true
+        self.pid = pid; sessionTrigger = trigger; pendingTrigger = true
         ownerBundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? ""
         secureFocusDetected = false
         state.manualOnly = PickerEditor.usesManualPosition(bundle: ownerBundle)
@@ -1273,9 +1241,9 @@ struct PickerDismissalGate {
                 }
                 let selected = self.range(element)
                 if let selected, selected.length != 0 { continue }
-                let expected = (hasHash ? "#" : "") + self.state.query
+                let expected = trigger + self.state.query
                 let observed = self.triggerText(element, selection: selected, count: expected.utf16.count)
-                let start = PickerEditor.triggerRange(selection: selected, query: self.state.query, hasHash: hasHash, observed: observed)
+                let start = PickerEditor.triggerRange(selection: selected, query: self.state.query, trigger: trigger, observed: observed)
                 // Only replace text if the editor confirms the exact trigger/query range.
                 self.initialRange = start
                 self.state.canInsert = start != nil
@@ -1309,7 +1277,7 @@ struct PickerDismissalGate {
             }
         }
         state.updateIndex(index); state.project = index.repository.full_name
-        model.pickerFeedback = state.canInsert ? nil : "This editor uses copy mode. Select a token, then replace your # search text by pasting it."
+        model.pickerFeedback = state.canInsert ? nil : "This editor uses copy mode. Select a token, then replace your trigger and search text by pasting it."
         showPicker()
     }
     private func showPicker() {
@@ -1348,7 +1316,7 @@ struct PickerDismissalGate {
             place(anchor: anchor, screen: screen)
             return
         }
-        // The event tap runs before the editor inserts #. Read its glyph bounds after
+        // The event tap runs before the editor inserts the trigger. Read its glyph bounds after
         // delivery, retrying briefly for editors that publish Accessibility asynchronously.
         placementTask = Task { [weak self] in
             for delay: UInt64 in [25_000_000, 60_000_000, 120_000_000] {
@@ -1356,7 +1324,7 @@ struct PickerDismissalGate {
                 guard let self, let target = self.target,
                       NSWorkspace.shared.frontmostApplication?.processIdentifier == self.pid,
                       let current = self.focusedElement(self.pid), CFEqual(target, current), self.isEditable(current) else { return }
-                let glyph = self.initialRange.flatMap { self.bounds(target, range: CFRange(location: $0.location, length: self.triggerHasHash ? 1 : 0)) }
+                let glyph = self.initialRange.flatMap { self.bounds(target, range: CFRange(location: $0.location, length: self.sessionTrigger.utf16.count)) }
                 let caret = self.initialRange.flatMap { self.bounds(target, range: $0) }
                 if self.secureFocusDetected { self.dismiss(); return }
                 // Cursor support varies independently of permission and text insertion.
@@ -1377,7 +1345,7 @@ struct PickerDismissalGate {
     private func updateTrackedInsertion() {
         if state.manualOnly {
             state.canInsert = PickerEditor.trackedReplacementCount(bundle: ownerBundle, query: state.query,
-                hasHash: triggerHasHash, active: trackedSessionValid && (pendingTrigger || copyOnlyFallback)) != nil
+                trigger: sessionTrigger, active: trackedSessionValid && (pendingTrigger || copyOnlyFallback)) != nil
             if !state.canInsert { trackedSessionValid = false }
         }
     }
@@ -1387,15 +1355,15 @@ struct PickerDismissalGate {
         if !state.canInsert {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(token.name, forType: .string)
-            model.status = "Copied \(token.name). Replace your # search text by pasting the token."
+            model.status = "Copied \(token.name). Replace your trigger and search text by pasting the token."
             dismiss()
             return
         }
         let trackedCount = PickerEditor.trackedReplacementCount(bundle: ownerBundle, query: state.query,
-            hasHash: triggerHasHash, active: trackedSessionValid && copyOnlyFallback && state.manualOnly)
+            trigger: sessionTrigger, active: trackedSessionValid && copyOnlyFallback && state.manualOnly)
         if trackedCount != nil {
             // Keyboard/navigation, external clicks and app switches dismiss this
-            // session. Recheck secure focus before replacing the tracked #query.
+            // session. Recheck secure focus before replacing the tracked trigger and query.
             _ = focusedElement(pid)
             guard !secureFocusDetected, !IsSecureEventInputEnabled(),
                   NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { dismiss(); return }
@@ -1403,11 +1371,11 @@ struct PickerDismissalGate {
         guard let target, let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier == pid,
               let current = focusedElement(pid), CFEqual(target, current), isEditable(current),
               let start = initialRange, let selection = range(current), selection.length == 0,
-              selection.location == start.location + state.query.utf16.count + (triggerHasHash ? 1 : 0) else {
+              selection.location == start.location + state.query.utf16.count + sessionTrigger.utf16.count else {
             model.status = "Text focus changed. No token was inserted."; dismiss(); return
         }
         }
-        let count = trackedCount ?? (state.query.count + (triggerHasHash ? 1 : 0))
+        let count = trackedCount ?? (state.query.count + sessionTrigger.count)
         let destination = pid
         dismiss(); injected = true
         let eventSource = CGEventSource(stateID: .privateState)
@@ -1472,6 +1440,7 @@ struct PickerDismissalGate {
         schedulePlacement()
     }
     func dismiss() {
+        triggerMatcher.reset()
         if state.creatingTab { state.cancelTab() }
         state.showingSettings = false
         state.hoveredTokenID = nil
