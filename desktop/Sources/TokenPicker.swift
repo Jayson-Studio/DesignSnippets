@@ -71,18 +71,20 @@ enum PickerLayout {
         guard modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return false }
         if state.handleLayoutShortcut(String(key.character)) { return true }
         switch key {
-        case .leftArrow: state.moveSection(-1)
-        case .rightArrow: state.moveSection(1)
-        case .upArrow: state.moveSelection(-1)
-        case .downArrow: state.moveSelection(1)
+        case .leftArrow: state.navigate(.left)
+        case .rightArrow: state.navigate(.right)
+        case .upArrow: state.navigate(.up)
+        case .downArrow: state.navigate(.down)
         case .return, .tab:
-            if state.matches.indices.contains(state.selected) { state.choose?(state.matches[state.selected]) }
+            if state.itemsFocused, state.matches.indices.contains(state.selected) { state.choose?(state.matches[state.selected]) }
         case .escape: state.query = ""
         default: return false
         }
         return true
     }
 }
+
+enum PickerNavigationDirection { case up, down, left, right }
 
 enum PickerDisplayLayout: Int, CaseIterable {
     case list = 1, twoColumns = 2, adaptive = 3
@@ -155,6 +157,7 @@ enum PickerSettingsSection: Hashable {
     @Published private(set) var displayLayout: PickerDisplayLayout = .list
     @Published var query = ""
     @Published private(set) var activeSection = "Foundations"
+    @Published var itemsFocused = false
     @Published var selected = 0
     @Published var hoveredTokenID: String? = nil
     @Published var openError: String? = nil
@@ -177,6 +180,8 @@ enum PickerSettingsSection: Hashable {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         displayLayout = PickerDisplayLayout(rawValue: defaults.integer(forKey: "pickerDisplayLayout")) ?? .list
+        restoreLayout()
+        lastPointerPosition = NSEvent.mouseLocation
         typedTrigger = PickerTrigger.load(from: defaults)
         if let savedEditor = defaults.string(forKey: "pickerPreferredEditor"),
            PreferredEditor(rawValue: savedEditor) != nil { preferredEditor = savedEditor }
@@ -199,11 +204,54 @@ enum PickerSettingsSection: Hashable {
     @discardableResult func handleLayoutShortcut(_ text: String) -> Bool {
         guard !creatingTab, !showingSettings, text.count == 1,
               let number = Int(text), let layout = PickerDisplayLayout(rawValue: number) else { return false }
-        if displayLayout != layout {
-            displayLayout = layout
-            defaults.set(layout.rawValue, forKey: "pickerDisplayLayout")
-        }
+        displayLayout = layout
+        defaults.set(layout.rawValue, forKey: layoutPreferenceKey)
         return true
+    }
+    private var layoutPreferenceKey: String {
+        let view = activeSection == "Foundations" ? "foundations" : tabDefinitions.first(where: { $0.title == activeSection })?.path ?? activeSection
+        return "pickerDisplayLayout:\(repositoryID.map(String.init) ?? "preview"):\(view)"
+    }
+    private func restoreLayout() {
+        displayLayout = PickerDisplayLayout(rawValue: defaults.integer(forKey: layoutPreferenceKey))
+            ?? PickerDisplayLayout(rawValue: defaults.integer(forKey: "pickerDisplayLayout")) ?? .list
+    }
+    var columnCount: Int {
+        switch displayLayout {
+        case .list: 1
+        case .twoColumns: 2
+        case .adaptive: max(1, Int((PickerLayout.width - 28 + 8) / (48 + 8)))
+        }
+    }
+    func navigate(_ direction: PickerNavigationDirection, pointer: CGPoint? = nil) {
+        selectionFromPointer = false
+        lastPointerPosition = pointer ?? NSEvent.mouseLocation
+        guard itemsFocused else {
+            switch direction {
+            case .left: moveSection(-1, pointer: pointer)
+            case .right: moveSection(1, pointer: pointer)
+            case .up:
+                if !matches.isEmpty { selected = 0; itemsFocused = true }
+            case .down: break
+            }
+            return
+        }
+        let count = matches.count
+        guard count > 0 else { itemsFocused = false; return }
+        selected = min(selected, count - 1)
+        let columns = columnCount
+        switch direction {
+        case .up:
+            if selected < columns { itemsFocused = false }
+            else { selected -= columns }
+        case .down:
+            if selected / columns == (count - 1) / columns { itemsFocused = false }
+            else { selected = min(selected + columns, count - 1) }
+        case .left:
+            if selected % columns > 0 { selected -= 1 }
+        case .right:
+            if selected % columns < columns - 1 && selected + 1 < count { selected += 1 }
+        }
     }
     func setTypedTrigger(_ trigger: String) {
         guard PickerTrigger.isValid(trigger) else { return }
@@ -309,9 +357,11 @@ enum PickerSettingsSection: Hashable {
             endTabEntry?()
         }
         activeSection = section
+        restoreLayout()
+        itemsFocused = false
         selected = 0
         selectionFromPointer = false
-        lastPointerPosition = pointer
+        lastPointerPosition = pointer ?? NSEvent.mouseLocation
     }
     func moveSection(_ delta: Int, pointer: CGPoint? = nil) {
         let tabs = sections
@@ -324,13 +374,14 @@ enum PickerSettingsSection: Hashable {
     @Published var referenceTokens: [DesignToken] = []
     var resolutionTokens: [DesignToken] { tokens + referenceTokens }
     func updateIndex(_ index: TokenIndex?) {
-        if repositoryID != index?.repository.id { openError = nil; checkoutError = nil }
+        if repositoryID != index?.repository.id { openError = nil; checkoutError = nil; itemsFocused = false }
         sourceTokens = index?.tokens ?? []
         tokens = index?.displayTokens ?? []
         referenceTokens = index?.referenceTokens ?? []
         tabDefinitions = index?.pickerTabs ?? []
         if case .tokens(let title) = settingsSection, !sections.contains(title) { settingsSection = .general }
         repositoryID = index?.repository.id
+        restoreLayout()
         checkoutPath = repositoryID.flatMap { defaults.string(forKey: "pickerCheckout:\($0)") } ?? ""
         hasProjectFolder = LocalDefinition.containsDefinition(checkout: checkoutPath, tokens: sourceTokens)
         sortOrders = Dictionary(uniqueKeysWithValues: sections.compactMap { section in
@@ -374,14 +425,15 @@ enum PickerSettingsSection: Hashable {
     }
     func moveSelection(_ delta: Int, pointer: CGPoint? = nil) {
         selectionFromPointer = false
-        lastPointerPosition = pointer
+        lastPointerPosition = pointer ?? NSEvent.mouseLocation
         let count = matches.count
-        if count > 0 { selected = min(max(selected + delta, 0), count - 1) }
+        if count > 0 { itemsFocused = true; selected = min(max(selected + delta, 0), count - 1) }
     }
     func hoverSelection(_ index: Int, at point: CGPoint) {
         guard matches.indices.contains(index), point != lastPointerPosition else { return }
         lastPointerPosition = point
         selectionFromPointer = true
+        itemsFocused = true
         selected = index
     }
     func deleteQueryCharacter() { if !query.isEmpty { query.removeLast() }; selected = 0 }
@@ -509,6 +561,11 @@ struct PickerView: View {
                 .onChange(of: state.selected) { _, value in
                     if !state.selectionFromPointer, matches.indices.contains(value) { proxy.scrollTo(matches[value].id, anchor: .center) }
                 }
+                .onChange(of: state.itemsFocused) { _, focused in
+                    if focused, !state.selectionFromPointer, matches.indices.contains(state.selected) {
+                        proxy.scrollTo(matches[state.selected].id, anchor: .center)
+                    }
+                }
                 .onChange(of: state.query) { _, _ in
                     if let first = matches.first { proxy.scrollTo(first.id, anchor: .top) }
                 }
@@ -536,10 +593,10 @@ struct PickerView: View {
                                     Text(state.displayTitle(for: section)).font(Protegia.font(12, bold: true)).fixedSize()
                                         .padding(.horizontal, 12).padding(.vertical, 10)
                                         .background {
-                                            if state.activeSection == section { Capsule().fill(Protegia.level2).matchedGeometryEffect(id: "tabs", in: tabSelection) }
+                                            if !state.itemsFocused && state.activeSection == section { Capsule().fill(Protegia.level2).matchedGeometryEffect(id: "tabs", in: tabSelection) }
                                         }
                                 }.buttonStyle(.plain).id(section)
-                                    .accessibilityAddTraits(state.activeSection == section ? .isSelected : [])
+                                    .accessibilityAddTraits(!state.itemsFocused && state.activeSection == section ? .isSelected : [])
                             }
                             Button { state.createTab() } label: {
                                 Image(systemName: "plus").font(Protegia.font(12, bold: true))
@@ -743,7 +800,7 @@ struct PickerView: View {
                         TokenBadge(token: token, tokens: state.resolutionTokens, size: 32)
                         Text(token.name).font(Protegia.font(9)).lineLimit(1)
                     }.frame(maxWidth: .infinity).frame(height: 64)
-                        .background(index == state.selected ? Protegia.level2 : Protegia.level1,
+                        .background(state.itemsFocused && index == state.selected ? Protegia.level2 : Protegia.level1,
                                     in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityLabel(token.name)
@@ -777,11 +834,11 @@ struct PickerView: View {
                         .accessibilityHint(state.hasProjectFolder ? "" : "Set up folder in settings")
                         .help(state.hasProjectFolder ? "Open definition in \(state.preferredEditor)" : "Set up folder in settings")
                 }
-                .background(index == state.selected ? Protegia.level2 : Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
+                .background(state.itemsFocused && index == state.selected ? Protegia.level2 : Protegia.level1, in: RoundedRectangle(cornerRadius: Protegia.controlRadius))
                 .contentShape(Rectangle())
             }
         }.id(token.id)
-            .accessibilityAddTraits(index == state.selected ? .isSelected : [])
+            .accessibilityAddTraits(state.itemsFocused && index == state.selected ? .isSelected : [])
             .onContinuousHover { phase in
                 if case .active = phase {
                     if state.hoveredTokenID != token.id { state.hoveredTokenID = token.id }
@@ -1265,11 +1322,8 @@ struct PickerDismissalGate {
         }
         if (pendingTrigger || target != nil || copyOnlyFallback), front.processIdentifier == pid,
            flags.isEmpty, [123, 124, 125, 126].contains(code) {
-            if code == 123 || code == 124 {
-                state.moveSection(code == 124 ? 1 : -1, pointer: NSEvent.mouseLocation)
-            } else {
-                state.moveSelection(code == 125 ? 1 : -1, pointer: NSEvent.mouseLocation)
-            }
+            let direction: PickerNavigationDirection = code == 123 ? .left : code == 124 ? .right : code == 125 ? .down : .up
+            state.navigate(direction, pointer: NSEvent.mouseLocation)
             return true
         }
         if pendingTrigger {
@@ -1286,6 +1340,7 @@ struct PickerDismissalGate {
             if code == 53 { dismiss(); return true }
             if code == 125 || code == 126 { dismiss(); return false }
             if code == 36 || code == 76 || code == 48 {
+                guard state.itemsFocused else { return true }
                 guard !state.matches.isEmpty else { dismiss(); return false }
                 insert(state.matches[min(state.selected, state.matches.count - 1)]); return true
             }

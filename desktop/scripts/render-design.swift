@@ -151,7 +151,10 @@ import CoreText
         try render(PickerView(state: vectorPicker), name: "token-picker-vector-icons")
         for mode in ["1", "2", "3"] {
             vectorPicker.handleLayoutShortcut(mode)
+            vectorPicker.selectSection("Icons")
             try render(PickerView(state: vectorPicker), name: "token-picker-layout-" + mode)
+            vectorPicker.navigate(.up)
+            try render(PickerView(state: vectorPicker), name: "token-picker-focused-layout-" + mode)
         }
         print("Rendered onboarding, GitHub setup, preferences, and token picker.")
     }
