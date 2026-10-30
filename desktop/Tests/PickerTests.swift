@@ -346,14 +346,32 @@ final class ColorCacheProtocol: URLProtocol {
         tabs.tabDefinitions = [iconTab]
         tabs.tokens += TokenParser.parse(#"{"check":{"$value":"✓","$type":"icon"}}"#, source: "icons.json")
         precondition(tabs.sections == ["Foundations", "Icons"] && tabs.matches.count == 4)
-        let layout = PickerState()
+        let layoutSuite = "layout-tests-" + UUID().uuidString
+        let layoutDefaults = UserDefaults(suiteName: layoutSuite)!
+        defer { layoutDefaults.removePersistentDomain(forName: layoutSuite) }
+        let layout = PickerState(defaults: layoutDefaults)
         layout.tabDefinitions = [PickerTab(title: "Symbols", path: "icons.json"), PickerTab(title: "Icons", path: "components.json")]
         layout.tokens = [DesignToken(name: "check", value: "✓", kind: "Icon", source: "icons.json"),
                          DesignToken(name: "button", value: "Button", kind: "Class", source: "components.json")]
         layout.selectSection("Symbols")
-        precondition(layout.usesIconGrid)
-        layout.selectSection("Icons")
         precondition(!layout.usesIconGrid)
+        layout.query = "check"
+        precondition(PreviewPickerKeyboard.handle("2", modifiers: [], state: layout))
+        precondition(layout.displayLayout == .twoColumns && layout.query == "check")
+        precondition(!PreviewPickerKeyboard.handle("3", modifiers: [.command], state: layout))
+        precondition(PreviewPickerKeyboard.handle("3", modifiers: [], state: layout))
+        precondition(layout.displayLayout == .adaptive)
+        precondition(PickerState(defaults: layoutDefaults).displayLayout == .adaptive)
+        layout.selectSection("Icons")
+        precondition(layout.usesIconGrid)
+        precondition(PreviewPickerKeyboard.handle("1", modifiers: [], state: layout))
+        precondition(!layout.usesIconGrid)
+        precondition(!PreviewPickerKeyboard.handle("4", modifiers: [], state: layout))
+        layout.showingSettings = true
+        precondition(!PreviewPickerKeyboard.handle("2", modifiers: [], state: layout))
+        layout.showingSettings = false
+        layout.createTab()
+        precondition(!PreviewPickerKeyboard.handle("3", modifiers: [], state: layout))
         tabs.query = "check"
         tabs.selected = 8
         tabs.moveSection(-1)

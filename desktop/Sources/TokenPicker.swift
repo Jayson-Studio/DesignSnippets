@@ -69,6 +69,7 @@ enum PickerLayout {
     @discardableResult static func handle(_ key: KeyEquivalent, modifiers: SwiftUI.EventModifiers, state: PickerState) -> Bool {
         guard !state.creatingTab && !state.showingSettings else { return false }
         guard modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return false }
+        if state.handleLayoutShortcut(String(key.character)) { return true }
         switch key {
         case .leftArrow: state.moveSection(-1)
         case .rightArrow: state.moveSection(1)
@@ -80,6 +81,17 @@ enum PickerLayout {
         default: return false
         }
         return true
+    }
+}
+
+enum PickerDisplayLayout: Int, CaseIterable {
+    case list = 1, twoColumns = 2, adaptive = 3
+    var columns: [GridItem] {
+        switch self {
+        case .list: []
+        case .twoColumns: Array(repeating: GridItem(.flexible(minimum: 48), spacing: 8), count: 2)
+        case .adaptive: [GridItem(.adaptive(minimum: 48), spacing: 8)]
+        }
     }
 }
 
@@ -140,6 +152,7 @@ enum PickerSettingsSection: Hashable {
         }
     }
     static let maxTabTitleLength = 25
+    @Published private(set) var displayLayout: PickerDisplayLayout = .list
     @Published var query = ""
     @Published private(set) var activeSection = "Foundations"
     @Published var selected = 0
@@ -163,6 +176,7 @@ enum PickerSettingsSection: Hashable {
     private var repositoryID: Int?
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        displayLayout = PickerDisplayLayout(rawValue: defaults.integer(forKey: "pickerDisplayLayout")) ?? .list
         typedTrigger = PickerTrigger.load(from: defaults)
         if let savedEditor = defaults.string(forKey: "pickerPreferredEditor"),
            PreferredEditor(rawValue: savedEditor) != nil { preferredEditor = savedEditor }
@@ -181,6 +195,15 @@ enum PickerSettingsSection: Hashable {
         showingSettings = false
         settingsSection = .general
         returnFromSettings?()
+    }
+    @discardableResult func handleLayoutShortcut(_ text: String) -> Bool {
+        guard !creatingTab, !showingSettings, text.count == 1,
+              let number = Int(text), let layout = PickerDisplayLayout(rawValue: number) else { return false }
+        if displayLayout != layout {
+            displayLayout = layout
+            defaults.set(layout.rawValue, forKey: "pickerDisplayLayout")
+        }
+        return true
     }
     func setTypedTrigger(_ trigger: String) {
         guard PickerTrigger.isValid(trigger) else { return }
@@ -370,13 +393,7 @@ enum PickerSettingsSection: Hashable {
         guard let path = tabDefinitions.first(where: { $0.title == section })?.path else { return [] }
         return tokens.filter { $0.source == path }
     }
-    var usesIconGrid: Bool {
-        guard activeSection != "Foundations" else { return false }
-        let entries = tokensForSection(activeSection)
-        return !entries.isEmpty && entries.allSatisfy {
-            $0.pickerSection == "Icons" && !["ts", "tsx"].contains(($0.source as NSString).pathExtension.lowercased())
-        }
-    }
+    var usesIconGrid: Bool { displayLayout != .list }
     var matches: [DesignToken] {
         let candidates = tokensForSection(activeSection)
         func sort(_ candidates: [DesignToken]) -> [DesignToken] {
@@ -476,7 +493,7 @@ struct PickerView: View {
                                 .font(Protegia.font(11)).foregroundStyle(Protegia.tertiary)
                         }.multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(30)
                     } else if state.usesIconGrid {
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
+                        LazyVGrid(columns: state.displayLayout.columns, spacing: 8) {
                             ForEach(Array(matches.enumerated()), id: \.element.id) { index, token in
                                 entry(token, index: index, grid: true)
                             }
@@ -1218,6 +1235,8 @@ struct PickerDismissalGate {
         event.keyboardGetUnicodeString(maxStringLength: chars.count, actualStringLength: &length, unicodeString: &chars)
         let text = String(utf16CodeUnits: chars, count: min(length, chars.count))
         let flags = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
+        if panel?.isVisible == true, front.processIdentifier == pid, flags.isEmpty,
+           state.handleLayoutShortcut(text) { return true }
         if code == 49 && flags == [.maskControl, .maskAlternate] {
             if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
                 if pendingTrigger || panel?.isVisible == true { dismiss() }

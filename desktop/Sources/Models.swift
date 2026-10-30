@@ -88,6 +88,8 @@ enum TokenParser {
     }
     static func parse(_ text: String, source: String) -> [DesignToken] {
         if ["ts", "tsx"].contains((source as NSString).pathExtension.lowercased()) {
+            let components = ComponentCatalog.parse(text, source: source)
+            if !components.isEmpty { return components }
             let artwork = IconArtwork.fromSources(semantic: text, providers: text)
             return IconCatalog.exports(text).map { DesignToken(name: $0, value: "React icon", kind: "Icon", source: source, iconSVG: artwork[$0]) }
         }
@@ -296,5 +298,21 @@ enum IconArtwork {
             result[match[2]] = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"\(box)\" \(style)><path d=\"\(path)\"/></svg>"
         }
         return result
+    }
+}
+
+
+/// Read public component names from a package's explicit export barrel, without running React.
+enum ComponentCatalog {
+    static func parse(_ text: String, source: String) -> [DesignToken] {
+        let clean = text.replacingOccurrences(of: #"/\*[\s\S]*?\*/|(?m)^\s*//[^\n]*"#, with: "", options: .regularExpression)
+        var names: Set<String> = []
+        for block in TokenParser.matches(#"\bexport\s*\{([^}]+)\}\s*from\s*["']\./components/[^"']+["']"#, clean) {
+            for item in block[1].components(separatedBy: ",") {
+                guard let match = TokenParser.matches(#"^\s*([A-Z][A-Za-z0-9]*)(?:\s+as\s+([A-Z][A-Za-z0-9]*))?\s*$"#, item).first else { continue }
+                names.insert(match[2].isEmpty ? match[1] : match[2])
+            }
+        }
+        return names.sorted().map { DesignToken(name: $0, value: "React component", kind: "Component", source: source, section: "Components") }
     }
 }

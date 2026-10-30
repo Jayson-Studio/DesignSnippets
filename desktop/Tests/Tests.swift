@@ -19,6 +19,17 @@ final class MockProtocol: URLProtocol {
     static func check(_ value: Bool, _ message: String) throws { if !value { throw SemanticError("FAIL: " + message) } }
     static func data(_ value: Any) throws -> Data { try JSONSerialization.data(withJSONObject: value) }
     static func main() async throws {
+        let components = TokenParser.parse("""
+        export { Button, Button as PrimaryButton, type ButtonProps, buttonVariants } from "./components/button"
+        export type { ActionBarProps } from "./components/action-bar"
+        export { ActionBar } from "./components/action-bar"
+        export * from "./icons"
+        // export { Fake } from "./components/fake"
+        /* export { OtherFake } from "./components/fake" */
+        export { Helper } from "./utilities/helper"
+        """, source: "packages/carrot-ui/src/index.ts")
+        try check(components.map(\.name) == ["ActionBar", "Button", "PrimaryButton"], "Import component exports, excluding types, helpers, comments and icons")
+        try check(components.allSatisfy { $0.kind == "Component" }, "Classify component exports")
         let menuSize = CGSize(width: 420, height: 630)
         for visible in [CGRect(x: 0, y: 90, width: 1920, height: 960), CGRect(x: -1512, y: 55, width: 1512, height: 950), CGRect(x: 0, y: 1080, width: 1920, height: 1050)] {
             let anchor = CGRect(x: visible.maxX - 80, y: visible.maxY, width: 22, height: 30)

@@ -138,7 +138,10 @@ import CoreText
             sourcePicker.query = argument("--query", fallback: "text-h3")
             try render(PickerView(state: sourcePicker), name: "token-picker-source-typography")
         }
-        let vectorPicker = PickerState()
+        let layoutSuite = "render-layout-" + UUID().uuidString
+        let layoutDefaults = UserDefaults(suiteName: layoutSuite)!
+        defer { layoutDefaults.removePersistentDomain(forName: layoutSuite) }
+        let vectorPicker = PickerState(defaults: layoutDefaults)
         vectorPicker.tokens = [("UserCircleIcon", "CircleUserRound"), ("UserGroupIcon", "UsersRound"), ("UserIcon", "UserRound")].map {
             DesignToken(name: $0.0, value: "Lucide semantic icon", kind: "Icon", source: "icons.tsx", iconSVG: IconArtwork.bundled("lucide:" + $0.1))
         }
@@ -146,6 +149,10 @@ import CoreText
         vectorPicker.selectSection("Icons")
         vectorPicker.query = "user"
         try render(PickerView(state: vectorPicker), name: "token-picker-vector-icons")
+        for mode in ["1", "2", "3"] {
+            vectorPicker.handleLayoutShortcut(mode)
+            try render(PickerView(state: vectorPicker), name: "token-picker-layout-" + mode)
+        }
         print("Rendered onboarding, GitHub setup, preferences, and token picker.")
     }
 }
